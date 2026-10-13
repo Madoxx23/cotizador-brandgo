@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="es">
+<meta charset="utf-8">
+<title>Cotizador Brandgo</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Oswald:wght@700&family=Instrument+Serif&display=swap">
+<link rel="stylesheet" href="styles.css">
+
+<header class="topbar">
+  <div class="topbar-in">
+    <a class="brand" href="./" title="Volver al inicio"><img id="brandLogo" alt="Brandgo"><div class="brand-txt"><b>Cotizador de campañas</b><span id="topClient">Propuesta comercial</span></div></a>
+    <div class="spacer"></div>
+    <a class="btn ghost small" href="./">Inicio</a>
+    <div id="resetArea"><button class="btn ghost small" id="resetBtn" type="button">Nueva cotización</button></div>
+  </div>
+  <nav class="steps" id="steps" aria-label="Pasos"></nav>
+</header>
+
+<main class="shell">
+  <section class="panel" id="panel" aria-live="polite"></section>
+  <aside class="aside" id="aside"><div class="aside-in" id="asideIn"></div></aside>
+</main>
+
+<footer class="nav">
+  <div class="progress"><div id="progressBar"></div></div>
+  <div class="nav-in">
+    <button class="btn" id="prevBtn" type="button">← Atrás</button>
+    <div class="count" id="stepCount"></div>
+    <button class="btn primary" id="nextBtn" type="button">Siguiente →</button>
+  </div>
+</footer>
+
+<div class="stage" id="stage" aria-hidden="true"></div>
+<div class="toast" id="toast" role="status"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="assets.js"></script>
+<script src="app.js"></script>
