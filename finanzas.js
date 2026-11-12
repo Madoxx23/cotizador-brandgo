@@ -70,7 +70,8 @@
       async clientes() { return ok(await sb.from('clientes').select('*').order('nombre')); },
       async pagos(mes) { return ok(await sb.from('pagos').select('*').eq('mes', mes).order('created_at')); },
       async gastos(mes) { return ok(await sb.from('gastos').select('*').eq('mes', mes).order('fecha')); },
-      async allPagos() { return ok(await sb.from('pagos').select('mes,valor,abonos')); },
+      async allPagos() { return ok(await sb.from('pagos').select('*')); },
+      async miembros() { return ok(await sb.from('miembros').select('*')); },
       async allGastos() { return ok(await sb.from('gastos').select('mes,valor,categoria,movimiento')); },
       async pagosAll() { return ok(await sb.from('pagos').select('*').order('mes', { ascending: false })); },
       async gastosAll() { return ok(await sb.from('gastos').select('*').order('fecha', { ascending: false })); },
@@ -100,6 +101,7 @@
       async pagos(mes) { return db.pagos.filter(p => p.mes === mes); },
       async gastos(mes) { return db.gastos.filter(g => g.mes === mes).sort((a, b) => a.fecha.localeCompare(b.fecha)); },
       async allPagos() { return db.pagos; },
+      async miembros() { return [{ user_id: 'demo', nombre: 'Prueba', avatar: 'mauro' }]; },
       async allGastos() { return db.gastos; },
       async pagosAll() { return db.pagos; },
       async gastosAll() { return db.gastos; },
@@ -109,9 +111,9 @@
       async metas() { return db.metas; },
       async setMeta(mes, meta) { const r = db.metas.find(m => m.mes === mes); if (r) r.meta = meta; else db.metas.push({ mes, meta }); return { mes, meta }; },
       async delMeta(mes) { db.metas = db.metas.filter(m => m.mes !== mes); },
-      async insert(t, row) { const r = Object.assign({ id: id(), created_at: new Date().toISOString() }, row); db[t].push(r); return r; },
+      async insert(t, row) { const now = new Date().toISOString(); const r = Object.assign({ id: id(), created_at: now, updated_at: now, created_by: 'demo', updated_by: 'demo' }, row); db[t].push(r); return r; },
       async insertMany(t, rows) { return Promise.all(rows.map(r => this.insert(t, r))); },
-      async update(t, rid, patch) { const r = db[t].find(x => x.id === rid); Object.assign(r, patch); return r; },
+      async update(t, rid, patch) { const r = db[t].find(x => x.id === rid); Object.assign(r, patch, { updated_at: new Date().toISOString(), updated_by: 'demo' }); return r; },
       async remove(t, rid) { db[t] = db[t].filter(x => x.id !== rid); }
     };
   }
@@ -128,8 +130,9 @@
     // Si aún no se ha corrido supabase/nomina.sql, el resto del módulo sigue funcionando.
     const nomP = Promise.all([store.equipo(), store.nomina(S.mes), store.nomina(prevMes), store.allNomina()])
       .then(r => { S.nominaMissing = false; return r; }).catch(() => { S.nominaMissing = true; return [[], [], [], []]; });
-    const [clientes, pagos, gastos, pp, pg, ap, ag, metas, [equipo, nomina, pn, an]] = await Promise.all([store.clientes(), store.pagos(S.mes), store.gastos(S.mes), store.pagos(prevMes), store.gastos(prevMes), store.allPagos(), store.allGastos(), metasP, nomP]);
-    Object.assign(S, { clientes, pagos, gastos, equipo, nomina, prev: { pagos: pp, gastos: pg, nomina: pn }, all: { pagos: ap, gastos: ag, nomina: an }, metas });
+    const miembrosP = store.miembros().catch(() => []);
+    const [clientes, pagos, gastos, pp, pg, ap, ag, metas, [equipo, nomina, pn, an], miembros] = await Promise.all([store.clientes(), store.pagos(S.mes), store.gastos(S.mes), store.pagos(prevMes), store.gastos(prevMes), store.allPagos(), store.allGastos(), metasP, nomP, miembrosP]);
+    Object.assign(S, { clientes, pagos, gastos, equipo, nomina, miembros, prev: { pagos: pp, gastos: pg, nomina: pn }, all: { pagos: ap, gastos: ag, nomina: an }, metas });
   }
   const metaDe = mes => { const m = S.metas.find(x => x.mes === mes); return m ? Number(m.meta) : 0; };
   const clienteDe = p => S.clientes.find(c => c.id === p.cliente_id) || { nombre: 'Cliente eliminado', categoria: p.categoria };
@@ -158,6 +161,116 @@
     if (p.avatar && A.equipo[p.avatar]) return h('img', { class: 'fin-av', src: A.equipo[p.avatar], alt: '', style: st });
     const ini = (p.nombre || '?').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
     return h('span', { class: 'fin-av ini', style: Object.assign({ fontSize: Math.round(size * 0.34) + 'px' }, st) }, ini);
+  }
+
+  /* ---------------- Registrado por ---------------- */
+  const miembroDe = uid => (S.miembros || []).find(m => m.user_id === uid) || null;
+  function autor(row) {
+    if (!row || (!row.created_by && !row.updated_by)) return null;
+    const c = miembroDe(row.created_by), u = miembroDe(row.updated_by), quien = u || c;
+    if (!quien) return null;
+    const editado = !!(c && u && u.user_id !== c.user_id);
+    const dia = iso => (iso ? dateShort(String(iso).slice(0, 10)) : '');
+    const tip = [c ? `Creado por ${c.nombre}${row.created_at ? ' el ' + dia(row.created_at) : ''}` : null,
+      u && (editado || row.updated_at !== row.created_at) ? `Última edición: ${u.nombre}${row.updated_at ? ' el ' + dia(row.updated_at) : ''}` : null].filter(Boolean).join(' · ');
+    return h('span', { class: 'fin-by', title: tip }, avatar({ avatar: quien.avatar, nombre: quien.nombre || '?' }, 16),
+      (editado ? 'Editado por ' : 'Por ') + (quien.nombre || 'alguien') + ((row.updated_at || row.created_at) ? ' · ' + dia(row.updated_at || row.created_at) : ''));
+  }
+
+  /* ---------------- Cartera vencida ---------------- */
+  // Un cobro está vencido si no está pagado y ya pasó el día de pago del cliente en ese mes (sin día: fin de mes).
+  function carteraVencida() {
+    const hoy = new Date(todayISO() + 'T12:00:00');
+    return (S.all.pagos || []).filter(p => p.cliente_id && estado(p) !== 'pagado').map(p => {
+      const c = S.clientes.find(x => x.id === p.cliente_id);
+      const vence = dayOf(p.mes, c && c.dia_pago ? c.dia_pago : 31);
+      const dias = Math.floor((hoy - new Date(vence + 'T12:00:00')) / 86400000);
+      return { p, c, vence, dias, debe: Math.max(0, Number(p.valor) - pagado(p)) };
+    }).filter(x => x.dias > 0 && x.debe > 0).sort((a, b) => b.dias - a.dias);
+  }
+  function carteraAlert() {
+    const list = carteraVencida();
+    if (!list.length) return null;
+    const total = list.reduce((s, x) => s + x.debe, 0);
+    const open = !!S.carteraOpen;
+    return h('section', { class: 'fin-alert fin-rise' + (open ? ' open' : '') },
+      h('button', { type: 'button', class: 'fin-alert-h', 'aria-expanded': open ? 'true' : 'false', onclick: () => { S.carteraOpen = !open; render(false); } },
+        h('span', { class: 'fin-alert-ico' }, '!'),
+        h('span', { class: 'fin-alert-t' }, h('b', null, 'Cartera vencida'), h('small', null, `${list.length} ${list.length === 1 ? 'cobro' : 'cobros'} con el día de pago vencido · el más antiguo hace ${list[0].dias} ${list[0].dias === 1 ? 'día' : 'días'}`)),
+        h('b', { class: 'fin-alert-v' }, money(total)),
+        h('span', { class: 'fin-alert-chev' }, open ? 'Ocultar' : 'Ver')),
+      open ? h('div', { class: 'fin-alert-list' }, list.map(x => h('div', { class: 'fin-alert-row' },
+        chipAbbr(x.p.categoria, CAT_ING),
+        h('div', { class: 'n' }, h('b', null, x.c ? x.c.nombre : 'Cliente'), h('small', null, monthLabel(x.p.mes) + ' · ' + ESTADOS[estado(x.p)].label)),
+        h('span', { class: 'fin-date late' }, h('i'), 'Venció ' + dateShort(x.vence), h('em', null, 'hace ' + x.dias + (x.dias === 1 ? ' día' : ' días'))),
+        h('b', { class: 'v' }, money(x.debe)),
+        h('div', { class: 'fin-acts' },
+          h('button', { type: 'button', class: 'btn small', onclick: async () => { if (S.mes !== x.p.mes) { S.mes = x.p.mes; await load(); render(false); } openPago({ cliente_id: x.p.cliente_id }); } }, 'Abonar'),
+          h('button', { type: 'button', class: 'btn small primary', onclick: () => generarCuenta(x.p) }, 'Cuenta de cobro'))))) : null);
+  }
+
+  /* ---------------- Cuenta de cobro desde un pago ---------------- */
+  function nextNumero() {
+    let max = 0;
+    try { max = Number(JSON.parse(localStorage.getItem('brandgo-cobro-ultimo') || '0')) || 0; } catch (e) { /* sin almacenamiento */ }
+    (S.all.pagos || []).forEach(p => (p.cuentas || []).forEach(c => { const n = parseInt(String(c.numero).replace(/\D/g, ''), 10); if (n > max) max = n; }));
+    return 'CC-' + String(max + 1).padStart(4, '0');
+  }
+  function generarCuenta(p) {
+    const c = clienteDe(p);
+    const debe = Math.max(0, Number(p.valor) - pagado(p));
+    const parcial = pagado(p) > 0 && debe > 0;
+    const tipo = p.categoria === 'mensual' ? 'marketing' : p.categoria === 'campana' ? 'campana' : 'otro';
+    const titulo = p.categoria === 'mensual' ? (c.plan || 'Marketing mensual') : (p.concepto || (p.categoria === 'campana' ? 'Campaña de marketing' : 'Servicio'));
+    const payload = {
+      v: 1, pago_id: p.id, numero: nextNumero(),
+      cliente: { nombre: c.nombre, tipoId: c.tipo_id || 'NIT', id: c.num_id || '', direccion: c.direccion || '', contacto: '' },
+      item: { tipo, titulo, plan: c.plan || '', periodo: monthLabel(p.mes), precio: debe || Number(p.valor),
+        descripcion: parcial ? `Saldo pendiente (${100 - avance(p)}%) de un total de ${money(p.valor)}.` : '' }
+    };
+    try { sessionStorage.setItem('brandgo-handoff-cobro', JSON.stringify(payload)); } catch (e) { toast('Tu navegador bloquea el paso de datos; abre la cuenta de cobro manualmente'); return; }
+    location.href = 'cuenta-de-cobro.html';
+  }
+
+  /* ---------------- Cliente desde una cotización aprobada ---------------- */
+  function takeCotizacion() {
+    let d = null;
+    try { d = JSON.parse(sessionStorage.getItem('brandgo-handoff-finanzas') || 'null'); } catch (e) { d = null; }
+    if (d) try { sessionStorage.removeItem('brandgo-handoff-finanzas'); } catch (e) { /* noop */ }
+    return d;
+  }
+  function openImport(d) {
+    const existente = S.clientes.find(c => c.nombre.trim().toLowerCase() === String(d.nombre || '').trim().toLowerCase());
+    const f = { nombre: d.nombre || '', categoria: existente ? existente.categoria : (d.categoria || 'campana'), valor: Number(d.valor) || 0, mes: monthOf(todayISO()), concepto: d.concepto || '', cobro: true };
+    const errEl = h('div', { class: 'fin-err', role: 'alert' });
+    const nom = h('input', { class: 'field big', id: 'im-nombre', value: f.nombre, oninput: e => { f.nombre = e.target.value; } });
+    const con = h('input', { class: 'field', id: 'im-concepto', value: f.concepto, oninput: e => { f.concepto = e.target.value; } });
+    const mes = h('input', { type: 'month', class: 'field', id: 'im-mes', value: f.mes.slice(0, 7), onchange: e => { if (e.target.value) f.mes = e.target.value + '-01'; } });
+    const content = h('div', { class: 'stack' },
+      existente ? h('div', { class: 'fin-info' }, h('span', null, `Ya existe el cliente "${existente.nombre}". Se usará ese perfil; solo se creará el cobro.`)) : null,
+      lbl('Cliente', 'im-nombre', nom),
+      h('div', null, h('span', { class: 'label' }, 'Tipo de cliente'), catPicker(CAT_ING, f.categoria, k => { f.categoria = k; })),
+      h('div', { class: 'grid2' }, lbl('Valor aprobado', 'im-valor', moneyInput('im-valor', f.valor, v => { f.valor = v; })), lbl('Mes del cobro', 'im-mes', mes)),
+      lbl('Concepto del cobro', 'im-concepto', con, true),
+      h('label', { class: 'switch' }, h('input', { type: 'checkbox', checked: true, onchange: e => { f.cobro = e.target.checked; } }), 'Crear el cobro de ese mes como pendiente'),
+      errEl);
+    const save = h('button', { type: 'button', class: 'btn primary huge', onclick: async () => {
+      errEl.textContent = '';
+      if (!f.nombre.trim()) { errEl.textContent = 'Escribe el nombre del cliente.'; return; }
+      if (!f.valor) { errEl.textContent = 'Escribe el valor aprobado.'; return; }
+      busy(save, 'Guardando…');
+      try {
+        const cli = existente || await store.insert('clientes', { nombre: f.nombre.trim(), categoria: f.categoria, valor: f.valor, activo: true });
+        let msg = existente ? 'Cliente existente' : 'Cliente creado';
+        if (f.cobro) {
+          const ya = (S.all.pagos || []).some(p => p.cliente_id === cli.id && p.mes === f.mes);
+          if (ya) msg += ' · ya tenía cobro en ' + monthLabel(f.mes);
+          else { await store.insert('pagos', { cliente_id: cli.id, mes: f.mes, categoria: f.categoria, valor: f.valor, concepto: f.concepto.trim() || null, abonos: [] }); msg += ' y cobro de ' + monthLabel(f.mes) + ' pendiente'; }
+        }
+        closeSheet(); toast(msg); S.mes = f.mes; S.tab = 'pagos'; await refresh();
+      } catch (e) { console.error(e); errEl.textContent = 'No se pudo guardar. Revisa tu conexión e intenta de nuevo.'; unbusy(save); }
+    } }, 'Crear en Finanzas');
+    openSheet('Cotización aprobada', 'Revisa los datos antes de crear el cliente y su cobro.', content, [h('button', { type: 'button', class: 'btn', onclick: closeSheet }, 'Ahora no'), save], 'naranja');
   }
 
   /* =====================================================================
@@ -216,6 +329,8 @@
     $('#logoutBtn').hidden = false;
     armInactivity();
     await refresh();
+    const cot = takeCotizacion();
+    if (cot) openImport(cot);
   }
 
   async function logout(msg) {
@@ -281,7 +396,7 @@
           h('button', { type: 'button', class: 'fin-qa exp', onclick: () => openGasto() }, h('b', null, 'GS'), h('span', null, h('strong', null, 'Registrar gasto'), h('small', null, 'Salió dinero'))),
           h('button', { type: 'button', class: 'fin-qa nom', onclick: () => openNomina() }, h('b', null, 'NO'), h('span', null, h('strong', null, 'Pagar nómina'), h('small', null, 'Quincena o mes completo'))))),
       h('div', { class: 'fin-bar' },
-        h('nav', { class: 'fin-tabs', 'aria-label': 'Secciones' }, TABS.map(([k, ab, lb]) => h('button', { type: 'button', class: S.tab === k ? 'on' : '', 'aria-current': S.tab === k ? 'page' : null, 'aria-label': lb, 'data-tip': lb, onclick: () => { S.tab = k; render(); } }, icon(k)))),
+        h('nav', { class: 'fin-tabs', 'aria-label': 'Secciones' }, TABS.map(([k, ab, lb]) => h('button', { type: 'button', class: S.tab === k ? 'on' : '', 'aria-current': S.tab === k ? 'page' : null, 'aria-label': lb, 'data-tip': lb, onclick: () => { S.tab = k; render(); } }, icon(k), k === 'pagos' && carteraVencida().length ? h('span', { class: 'fin-tab-dot', 'aria-label': carteraVencida().length + ' cobros vencidos' }, carteraVencida().length) : null))),
         h('div', { class: 'fin-month' },
           h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Mes anterior', onclick: () => { S.mes = addMonths(S.mes, -1); refresh(); } }, '‹'),
           monthInput,
@@ -361,6 +476,7 @@
   }
 
   function viewMeses(body) {
+    const ca = carteraAlert(); if (ca) body.append(ca);
     const list = balances();
     const actual = monthOf(todayISO());
     body.append(h('div', { class: 'fin-sum-head fin-rise' },
@@ -441,6 +557,7 @@
   }
 
   function viewResumen(body) {
+    const ca = carteraAlert(); if (ca) body.append(ca);
     const t = totMes();
     const tp = totPrev();
     const has = (S.prev && (S.prev.pagos.length || S.prev.gastos.length || S.prev.nomina.length));
@@ -625,6 +742,7 @@
      PAGOS (tabla)
      ===================================================================== */
   function viewPagos(body) {
+    const ca = carteraAlert(); if (ca) body.append(ca);
     const f = S.f.pagos, range = rangeOn(f);
     const rows = applyFilters('pagos', sourceFor('pagos')).sort((a, b) => (range ? b.mes.localeCompare(a.mes) : 0) || clienteDe(a).nombre.localeCompare(clienteDe(b).nombre));
     const sinCobro = S.clientes.filter(c => c.activo && c.categoria === 'mensual' && !S.pagos.some(p => p.cliente_id === c.id));
@@ -646,14 +764,14 @@
         const abonos = (p.abonos || []).slice().sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
         return h('tr', { class: S.sel.has(p.id) ? 'picked' : '' },
           selCell(p.id),
-          h('td', { class: 'name' }, h('div', { class: 'fin-cell-name' }, chipAbbr(p.categoria, CAT_ING), h('div', null, h('b', null, clienteDe(p).nombre), h('small', null, [range ? monthLabel(p.mes) : null, p.concepto].filter(Boolean).join(' · ') || CAT_ING[p.categoria].label)))),
+          h('td', { class: 'name' }, h('div', { class: 'fin-cell-name' }, chipAbbr(p.categoria, CAT_ING), h('div', null, h('b', null, clienteDe(p).nombre), h('small', null, [range ? monthLabel(p.mes) : null, p.concepto].filter(Boolean).join(' · ') || CAT_ING[p.categoria].label), autor(p)))),
           h('td', { class: 'num strong' }, money(p.valor)),
           h('td', { class: 'num' }, h('div', { class: 'fin-prog-cell' }, h('div', { class: 'fin-prog' }, growBar(av)), h('small', null, av + '%'))),
           h('td', { class: 'num' }, money(pagado(p))),
           h('td', { class: 'num' }, money(Math.max(0, Number(p.valor) - pagado(p)))),
           h('td', null, abonos.length ? h('div', { class: 'fin-dates' }, abonos.map(a => dateBubble(a.fecha, money(a.valor)))) : h('span', { class: 'fin-muted' }, 'Sin pagos')),
-          h('td', null, estadoChip(e)),
-          h('td', { class: 'acts' }, rowActions('pagos', p, [e !== 'pagado' ? ['Abonar', () => openPago({ cliente_id: p.cliente_id })] : null, ['Editar', () => openCobro(p)]])));
+          h('td', null, h('div', { class: 'fin-dates' }, estadoChip(e), (p.cuentas || []).map(c => h('span', { class: 'fin-date doc', title: 'Cuenta de cobro emitida el ' + dateShort(c.fecha) + ' por ' + money(c.valor) }, h('i'), c.numero)))),
+          h('td', { class: 'acts' }, rowActions('pagos', p, [e !== 'pagado' ? ['Abonar', () => openPago({ cliente_id: p.cliente_id })] : null, ['Cuenta de cobro', () => generarCuenta(p)], ['Editar', () => openCobro(p)]])));
       })),
       h('tfoot', null, h('tr', null, h('td'), h('td', null, rows.length + (rows.length === 1 ? ' cobro' : ' cobros')), h('td', { class: 'num' }, money(sum(p => Number(p.valor)))), h('td'), h('td', { class: 'num' }, money(sum(pagado))), h('td', { class: 'num' }, money(sum(p => Math.max(0, Number(p.valor) - pagado(p))))), h('td'), h('td'), h('td'))))));
   }
@@ -711,7 +829,7 @@
         h('thead', null, h('tr', null, selHead(list.map(g => g.id)), ...['Concepto', 'Categoría', 'Fecha', 'Valor', ''].map((c, i) => h('th', { class: i === 3 ? 'num' : '' }, c)))),
         h('tbody', null, list.map(g => h('tr', { class: S.sel.has(g.id) ? 'picked' : '' },
           selCell(g.id),
-          h('td', { class: 'name' }, h('b', null, g.concepto), g.movimiento === 'entrada' ? h('small', null, 'Entra a Brandgo · no suma como gasto') : (g.notas ? h('small', null, g.notas) : null)),
+          h('td', { class: 'name' }, h('b', null, g.concepto), g.movimiento === 'entrada' ? h('small', null, 'Entra a Brandgo · no suma como gasto') : (g.notas ? h('small', null, g.notas) : null), autor(g)),
           h('td', null, chip(g.categoria, CAT_GAS)),
           h('td', null, dateBubble(g.fecha)),
           h('td', { class: 'num strong' }, (g.movimiento === 'entrada' ? '+' : '') + money(g.valor)),
@@ -755,7 +873,7 @@
         onclick: ev => { if (ev.target.closest('button')) return; if (e !== 'pagado') openNomina({ persona_id: n.persona_id }); else openNominaEdit(n); },
         onkeydown: ev => { if (ev.key === 'Enter' && ev.target === ev.currentTarget) ev.currentTarget.click(); } },
         h('div', { class: 'fin-person-h' }, h('div', { class: 'fin-av-wrap' }, avatar(p, 64), h('i', { class: 'dot ' + ESTADOS[e].cls })),
-          h('div', null, h('b', null, p.nombre), h('small', null, p.rol || TIPO_NOM[n.tipo].label))),
+          h('div', null, h('b', null, p.nombre), h('small', null, p.rol || TIPO_NOM[n.tipo].label), autor(n))),
         h('div', { class: 'fin-person-v' }, h('span', null, money(pagado(n)), h('small', null, ' de ' + money(n.valor))), estadoChip(e)),
         h('div', { class: 'fin-prog big' }, growBar(av)),
         h('div', { class: 'fin-abonos' }, (n.abonos || []).length ? n.abonos.map(a => h('span', null, dateShort(a.fecha) + ' · ' + money(a.valor))) : h('span', { class: 'fin-muted' }, 'Sin pagos todavía')),
@@ -1129,10 +1247,19 @@
     const nom = h('input', { class: 'field big', id: 'cl-nombre', placeholder: 'Nombre del cliente', oninput: e => { f.nombre = e.target.value; } }); nom.value = f.nombre;
     const dia = h('input', { class: 'field', id: 'cl-dia', type: 'number', min: 1, max: 31, placeholder: 'Ej. 15', oninput: e => { f.dia_pago = e.target.value; } }); dia.value = f.dia_pago || '';
     const notas = h('input', { class: 'field', id: 'cl-notas', placeholder: 'Ej. Paga 50% al inicio y 50% a los 15 días', oninput: e => { f.notas = e.target.value; } }); notas.value = f.notas || '';
+    // Datos para la cuenta de cobro (opcionales)
+    const tipoId = h('select', { class: 'select', id: 'cl-tipoid', onchange: e => { f.tipo_id = e.target.value; } }, ['NIT', 'C.C.', 'C.E.'].map(o => h('option', { value: o, selected: (f.tipo_id || 'NIT') === o }, o)));
+    const numId = h('input', { class: 'field', id: 'cl-numid', placeholder: 'Ej. 900.123.456-7', oninput: e => { f.num_id = e.target.value; } }); numId.value = f.num_id || '';
+    const dir = h('input', { class: 'field', id: 'cl-dir', placeholder: 'Dirección del cliente', oninput: e => { f.direccion = e.target.value; } }); dir.value = f.direccion || '';
+    const plan = h('input', { class: 'field', id: 'cl-plan', placeholder: 'Ej. Plan Crecimiento', oninput: e => { f.plan = e.target.value; } }); plan.value = f.plan || '';
     const content = h('div', { class: 'stack' },
       lbl('Nombre', 'cl-nombre', nom),
       h('div', null, h('span', { class: 'label' }, 'Tipo de cliente'), catPicker(CAT_ING, f.categoria, k => { f.categoria = k; })),
       h('div', { class: 'grid2' }, lbl('Valor que representa', 'cl-valor', moneyInput('cl-valor', f.valor, v => { f.valor = v; })), lbl('Día de pago', 'cl-dia', dia, true)),
+      lbl('Plan que tiene', 'cl-plan', plan, true),
+      h('div', { class: 'fin-subhead' }, 'Para la cuenta de cobro'),
+      h('div', { class: 'grid2' }, lbl('Tipo de documento', 'cl-tipoid', tipoId), lbl('Número de documento', 'cl-numid', numId, true)),
+      lbl('Dirección', 'cl-dir', dir, true),
       lbl('Nota', 'cl-notas', notas, true),
       h('label', { class: 'switch' }, h('input', { type: 'checkbox', checked: f.activo, onchange: e => { f.activo = e.target.checked; } }), 'Cliente activo'),
       errEl);
@@ -1140,6 +1267,9 @@
       if (!f.nombre.trim()) { errEl.textContent = 'Escribe el nombre del cliente.'; return; }
       busy(save, 'Guardando…');
       const row = { nombre: f.nombre.trim(), categoria: f.categoria, valor: f.valor || 0, dia_pago: f.dia_pago ? Number(f.dia_pago) : null, activo: f.activo, notas: (f.notas || '').trim() || null };
+      // Los campos nuevos solo se envían si tienen algo (así no falla antes de correr conexiones.sql)
+      ['num_id', 'direccion', 'plan'].forEach(k => { const v = (f[k] || '').trim(); if (v || (c && c[k])) row[k] = v || null; });
+      if (row.num_id || (c && c.tipo_id)) row.tipo_id = f.tipo_id || 'NIT';
       try { if (edit) await store.update('clientes', c.id, row); else await store.insert('clientes', row); closeSheet(); toast(edit ? 'Cliente actualizado' : 'Cliente creado'); await refresh(); }
       catch (e) { console.error(e); errEl.textContent = 'No se pudo guardar.'; unbusy(save); }
     } }, edit ? 'Guardar cambios' : 'Crear cliente');

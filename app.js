@@ -707,8 +707,19 @@
         empty ? h('div', { class: 'auto-note' }, 'Ningún servicio tiene puntos todavía. Vuelve a «Servicios» y activa al menos uno.') : null,
         block('Archivo', null,
           field('Nombre del archivo', S.archivo, v => S.archivo = v, { id: 'archivo', placeholder: `Propuesta comercial - ${S.cliente || 'Cliente'}` }),
-          h('div', { class: 'download' }, btn, status)))
+          h('div', { class: 'download' }, btn, status)),
+        block('¿El cliente aprobó?', 'Solo con acceso a Finanzas',
+          h('p', { class: 'help', style: { margin: 0 } }, `Crea a ${S.cliente || 'este cliente'} en Finanzas con el valor de la inversión (${'$' + fmtMoney(S.inversion.valor)} ${S.inversion.moneda}) y deja su cobro del mes como pendiente. Te pedirá entrar si no lo has hecho.`),
+          h('button', { type: 'button', class: 'btn', style: { alignSelf: 'flex-start' }, onclick: enviarAFinanzas }, 'Crear cliente y cobro en Finanzas →')))
     ];
+  }
+
+  // Pasa la cotización aprobada a Finanzas en esta misma pestaña (sessionStorage, nunca en la URL)
+  function enviarAFinanzas() {
+    const servicios = active().map(s => s.titulo).filter(Boolean);
+    const payload = { v: 1, nombre: S.cliente || '', categoria: 'campana', valor: Number(S.inversion.valor) || 0, concepto: ('Campaña · ' + (servicios.slice(0, 3).join(', ') || S.etiqueta || 'Propuesta')).slice(0, 190) };
+    try { sessionStorage.setItem('brandgo-handoff-finanzas', JSON.stringify(payload)); } catch (e) { toast('Tu navegador bloquea el paso de datos; crea el cliente desde Finanzas'); return; }
+    location.href = 'finanzas.html';
   }
 
   /* ---------- Render ---------- */

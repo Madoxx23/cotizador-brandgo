@@ -65,6 +65,41 @@
   let S = store.get(KEY, null);
   if (!S || S.v !== 1) S = freshState(true);
 
+  /* ---------- Cuenta que llega desde Finanzas (misma pestaña) ---------- */
+  let FROM = null;
+  try { FROM = JSON.parse(sessionStorage.getItem('brandgo-handoff-cobro') || 'null'); sessionStorage.removeItem('brandgo-handoff-cobro'); } catch (e) { FROM = null; }
+  if (FROM && FROM.v === 1) {
+    S = freshState(false);
+    const saved = store.get(KEY_CLIENTES, []).find(c => c.nombre.trim().toLowerCase() === String(FROM.cliente.nombre || '').trim().toLowerCase()) || {};
+    S.cliente = Object.assign({ nombre: '', tipoId: 'NIT', id: '', direccion: '', contacto: '' }, saved, Object.fromEntries(Object.entries(FROM.cliente).filter(([, v]) => v)));
+    if (FROM.numero) S.numero = FROM.numero;
+    const it = newItem(FROM.item.tipo in TIPOS ? FROM.item.tipo : 'otro');
+    Object.assign(it, { titulo: FROM.item.titulo || '', periodo: FROM.item.periodo || '', precio: Number(FROM.item.precio) || 0, descripcion: FROM.item.descripcion || '' });
+    if (it.tipo === 'marketing') {
+      const plan = store.get(KEY_PLANES, []).find(p => p.titulo.trim().toLowerCase() === String(FROM.item.plan || FROM.item.titulo).trim().toLowerCase());
+      if (plan) { it.titulo = plan.titulo; it.incluye = plan.incluye.slice(); }
+    }
+    if (it.tipo === 'campana') it.entregables = [];
+    S.items = [it];
+    S.pagoId = FROM.pago_id;
+    S.paso = 'descargar';
+  }
+
+  // Al descargar una cuenta que vino de Finanzas, se anota en ese pago (usa la sesión de Finanzas de esta pestaña)
+  async function registrarEnFinanzas() {
+    const cfg = window.FINANZAS_CONFIG || {};
+    if (!S.pagoId || !window.supabase || !cfg.supabaseUrl) return 'skip';
+    const sb = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, { auth: { storage: window.sessionStorage, persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } });
+    const { data: ses } = await sb.auth.getSession();
+    if (!ses || !ses.session) return 'nosession';
+    const r = await sb.from('pagos').select('cuentas').eq('id', S.pagoId).single();
+    if (r.error) throw r.error;
+    const cuentas = (r.data.cuentas || []).filter(c => c.numero !== S.numero).concat({ numero: S.numero, fecha: today(), valor: total(), formato: S.formato });
+    const u = await sb.from('pagos').update({ cuentas }).eq('id', S.pagoId);
+    if (u.error) throw u.error;
+    return 'ok';
+  }
+
   let saveT;
   function save() {
     clearTimeout(saveT);
@@ -561,6 +596,10 @@
     const key = STEPS[idx()].key;
     const panel = $('#panel'); panel.innerHTML = '';
     const map = { encabezado: stepEncabezado, cobrador: stepCobrador, cliente: stepCliente, servicios: stepServicios, pago: stepPago, firma: stepFirma, descargar: stepDescargar };
+    if (S.pagoId) panel.append(h('div', { class: 'fin-handoff' },
+      h('div', null, h('b', null, 'Cuenta para un cobro de Finanzas'),
+        h('small', null, S.pagoRegistrado === S.numero ? `La cuenta ${S.numero} ya quedó anotada en ese pago.` : 'Al descargar el PDF, el número de esta cuenta queda anotado en ese pago.')),
+      h('a', { class: 'btn small', href: 'finanzas.html' }, '← Volver a Finanzas')));
     panel.append(...map[key]().flat(Infinity).filter(Boolean));
     panel.querySelectorAll('textarea').forEach(autosize);
     if (focusAfter) {
@@ -626,6 +665,13 @@
           store.set(KEY_CLIENTES, list);
         }
         status.textContent = `Listo: ${name}`; toast('PDF descargado');
+        if (S.pagoId) {
+          try {
+            const res = await registrarEnFinanzas();
+            if (res === 'ok') { S.pagoRegistrado = S.numero; save(); status.textContent = `Listo: ${name} · registrada en el pago de Finanzas`; toast('Registrada en Finanzas'); }
+            else if (res === 'nosession') status.textContent = `Listo: ${name}. Para anotarla en Finanzas, abre la cuenta desde Finanzas en esta misma pestaña.`;
+          } catch (e) { console.error(e); status.textContent = `Listo: ${name}. No se pudo anotar en Finanzas; revisa tu conexión.`; }
+        }
       } else status.textContent = 'Descarga cancelada.';
     } catch (e) {
       console.error(e);
