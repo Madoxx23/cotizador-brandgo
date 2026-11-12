@@ -108,6 +108,8 @@ create policy "miembros gestionan gastos" on public.gastos for all to authentica
 
 -- Los visitantes sin sesión no tienen ningún permiso sobre estas tablas.
 revoke all on public.miembros, public.clientes, public.pagos, public.gastos from anon;
+-- Permisos explícitos (necesarios si "Automatically expose new tables" está desactivado, como se recomienda).
+grant usage on schema public to authenticated;
 grant select on public.miembros to authenticated;
 grant select, insert, update, delete on public.clientes, public.pagos, public.gastos to authenticated;
 
