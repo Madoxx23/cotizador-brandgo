@@ -72,6 +72,8 @@
       async gastos(mes) { return ok(await sb.from('gastos').select('*').eq('mes', mes).order('fecha')); },
       async allPagos() { return ok(await sb.from('pagos').select('mes,valor,abonos')); },
       async allGastos() { return ok(await sb.from('gastos').select('mes,valor,categoria,movimiento')); },
+      async pagosAll() { return ok(await sb.from('pagos').select('*').order('mes', { ascending: false })); },
+      async gastosAll() { return ok(await sb.from('gastos').select('*').order('fecha', { ascending: false })); },
       async equipo() { return ok(await sb.from('equipo').select('*').order('nombre')); },
       async nomina(mes) { return ok(await sb.from('nomina').select('*').eq('mes', mes)); },
       async allNomina() { return ok(await sb.from('nomina').select('mes,valor,abonos')); },
@@ -99,6 +101,8 @@
       async gastos(mes) { return db.gastos.filter(g => g.mes === mes).sort((a, b) => a.fecha.localeCompare(b.fecha)); },
       async allPagos() { return db.pagos; },
       async allGastos() { return db.gastos; },
+      async pagosAll() { return db.pagos; },
+      async gastosAll() { return db.gastos; },
       async equipo() { return db.equipo.slice().sort((a, b) => a.nombre.localeCompare(b.nombre)); },
       async nomina(mes) { return db.nomina.filter(n => n.mes === mes); },
       async allNomina() { return db.nomina; },
@@ -234,17 +238,39 @@
   /* =====================================================================
      ESTRUCTURA PRINCIPAL
      ===================================================================== */
+  /* ---------------- Íconos de línea estilo Apple (24 × 24) ---------------- */
+  const ICONS = {
+    meses: '<rect x="3.5" y="5" width="17" height="15.5" rx="3.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/><circle cx="8.5" cy="14.5" r="1" class="f"/><circle cx="12" cy="14.5" r="1" class="f"/><circle cx="15.5" cy="14.5" r="1" class="f"/>',
+    resumen: '<path d="M4 20h16"/><rect x="5.5" y="11" width="3.2" height="6.5" rx="1.1"/><rect x="10.4" y="6" width="3.2" height="11.5" rx="1.1"/><rect x="15.3" y="9" width="3.2" height="8.5" rx="1.1"/>',
+    pagos: '<circle cx="12" cy="12" r="8.6"/><path d="M12 7.3v8.6M8.4 12.6 12 16.2l3.6-3.6"/>',
+    gastos: '<circle cx="12" cy="12" r="8.6"/><path d="M12 16.7V8.1M8.4 11.4 12 7.8l3.6 3.6"/>',
+    nomina: '<circle cx="9" cy="8.6" r="3.3"/><path d="M3.3 19.3c.7-3.3 2.9-5.2 5.7-5.2s5 1.9 5.7 5.2"/><circle cx="16.8" cy="9.6" r="2.6"/><path d="M15.9 14.3c2.6-.2 4.5 1.4 5 4.4"/>',
+    clientes: '<rect x="3.5" y="7.3" width="17" height="12.4" rx="3"/><path d="M9 7.3V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1.3M3.5 12.6h17"/>',
+    filtro: '<path d="M4 7h16M7 12h10M10.2 17h3.6"/>',
+    papelera: '<path d="M4.5 7h15M10 4h4M6.5 7l.9 11.4a2 2 0 0 0 2 1.8h5.2a2 2 0 0 0 2-1.8L17.5 7M10.2 11v5.5M13.8 11v5.5"/>',
+    mas: '<path d="M12 5.5v13M5.5 12h13"/>'
+  };
+  function icon(name) {
+    const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('class', 'fin-ico'); s.setAttribute('aria-hidden', 'true');
+    s.innerHTML = ICONS[name] || '';
+    return s;
+  }
+
   const TABS = [['meses', 'ME', 'Meses'], ['resumen', 'RS', 'Resumen'], ['pagos', 'PG', 'Pagos'], ['gastos', 'GS', 'Gastos'], ['nomina', 'NO', 'Nómina'], ['clientes', 'CL', 'Clientes']];
   const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   async function refresh() {
-    try { await load(); } catch (e) { console.error(e); toast('No se pudieron cargar los datos'); }
+    S.range = {};
+    try { await load(); for (const t of ['pagos', 'gastos']) if (rangeOn(S.f[t])) await ensureRange(t); } catch (e) { console.error(e); toast('No se pudieron cargar los datos'); }
     render();
   }
 
   function render(anim) {
     if (!S.user) return;
     S.anim = anim !== false && !reduceMotion;
+    if (S._selKey !== S.tab + S.mes) { S.sel.clear(); S._selKey = S.tab + S.mes; }
+    if (!['pagos', 'gastos', 'clientes'].includes(S.tab)) drawBulk();
     app.innerHTML = '';
     const monthInput = h('input', { type: 'month', class: 'field', id: 'fin-mes', value: S.mes.slice(0, 7), 'aria-label': 'Mes', onchange: e => { if (e.target.value) { S.mes = e.target.value + '-01'; refresh(); } } });
     app.append(
@@ -255,7 +281,7 @@
           h('button', { type: 'button', class: 'fin-qa exp', onclick: () => openGasto() }, h('b', null, 'GS'), h('span', null, h('strong', null, 'Registrar gasto'), h('small', null, 'Salió dinero'))),
           h('button', { type: 'button', class: 'fin-qa nom', onclick: () => openNomina() }, h('b', null, 'NO'), h('span', null, h('strong', null, 'Pagar nómina'), h('small', null, 'Quincena o mes completo'))))),
       h('div', { class: 'fin-bar' },
-        h('nav', { class: 'fin-tabs', 'aria-label': 'Secciones' }, TABS.map(([k, ab, lb]) => h('button', { type: 'button', class: S.tab === k ? 'on' : '', 'aria-current': S.tab === k ? 'page' : null, onclick: () => { S.tab = k; render(); } }, h('b', null, ab), lb))),
+        h('nav', { class: 'fin-tabs', 'aria-label': 'Secciones' }, TABS.map(([k, ab, lb]) => h('button', { type: 'button', class: S.tab === k ? 'on' : '', 'aria-current': S.tab === k ? 'page' : null, 'aria-label': lb, 'data-tip': lb, onclick: () => { S.tab = k; render(); } }, icon(k)))),
         h('div', { class: 'fin-month' },
           h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Mes anterior', onclick: () => { S.mes = addMonths(S.mes, -1); refresh(); } }, '‹'),
           monthInput,
@@ -462,40 +488,175 @@
   }
 
   /* =====================================================================
+     TABLAS: filtros, selección múltiple y burbujas de fecha
+     ===================================================================== */
+  const blankFilter = () => ({ q: '', estado: 'todos', cats: [], min: 0, max: 0, desde: '', hasta: '' });
+  S.f = { pagos: blankFilter(), gastos: blankFilter(), clientes: blankFilter() };
+  S.fOpen = {};
+  S.sel = new Set();
+  S.range = {};
+
+  const rangeOn = f => !!(f.desde || f.hasta);
+  const inRange = (fecha, f) => !!fecha && (!f.desde || fecha >= f.desde) && (!f.hasta || fecha <= f.hasta);
+  const activeCount = f => (f.cats.length ? 1 : 0) + (f.min || f.max ? 1 : 0) + (rangeOn(f) ? 1 : 0);
+
+  // Con rango de fechas se buscan registros de todos los meses (se cargan una vez y se reutilizan)
+  async function ensureRange(table) {
+    if (S.range[table]) return;
+    try { S.range[table] = table === 'pagos' ? await store.pagosAll() : await store.gastosAll(); }
+    catch (e) { console.error(e); S.range[table] = []; toast('No se pudieron cargar los otros meses'); }
+  }
+  function sourceFor(table) {
+    const f = S.f[table];
+    if (table === 'clientes') return S.clientes;
+    if (rangeOn(f) && S.range[table]) return S.range[table];
+    return table === 'pagos' ? S.pagos : S.gastos;
+  }
+  function applyFilters(table, rows) {
+    const f = S.f[table], q = f.q.trim().toLowerCase();
+    return rows.filter(r => {
+      const name = table === 'pagos' ? clienteDe(r).nombre : table === 'gastos' ? r.concepto : r.nombre;
+      if (q && !name.toLowerCase().includes(q)) return false;
+      if (f.cats.length && !f.cats.includes(r.categoria)) return false;
+      const v = Number(r.valor) || 0;
+      if (f.min && v < f.min) return false;
+      if (f.max && v > f.max) return false;
+      if (table === 'pagos' && f.estado !== 'todos' && estado(r) !== f.estado) return false;
+      if (rangeOn(f)) {
+        if (table === 'pagos' && !(r.abonos || []).some(a => inRange(a.fecha, f))) return false;
+        if (table === 'gastos' && !inRange(r.fecha, f)) return false;
+      }
+      return true;
+    });
+  }
+
+  function filterBar(table, cats, placeholder) {
+    const f = S.f[table], n = activeCount(f), open = !!S.fOpen[table];
+    const search = h('input', { class: 'field fin-search', type: 'search', id: 'fs-' + table, placeholder, value: f.q, 'aria-label': placeholder,
+      oninput: e => { f.q = e.target.value; const pos = e.target.selectionStart; render(false); const el = $('#fs-' + table); if (el) { el.focus(); el.setSelectionRange(pos, pos); } } });
+    const toggle = h('button', { type: 'button', class: 'btn fin-ftoggle' + (open ? ' on' : ''), 'aria-expanded': open ? 'true' : 'false', onclick: () => { S.fOpen[table] = !open; render(false); } },
+      icon('filtro'), 'Filtros', n ? h('span', { class: 'fin-badge' }, n) : null);
+    const row = h('div', { class: 'fin-fbar' }, search,
+      table === 'pagos' ? segment([['todos', 'Todos'], ['pagado', 'Pagado'], ['proceso', 'En proceso'], ['pendiente', 'Pendiente']], f.estado, v => { f.estado = v; render(false); }) : null,
+      toggle);
+    if (!open) return row;
+    const moneyF = (key, ph) => {
+      const inp = h('input', { type: 'text', inputmode: 'numeric', class: 'field', placeholder: ph, 'aria-label': ph, value: f[key] ? fmtMoney(f[key]) : '',
+        oninput: e => { const d = num(e.target.value); e.target.value = d ? fmtMoney(d) : ''; },
+        onchange: e => { f[key] = num(e.target.value); render(false); },
+        onkeydown: e => { if (e.key === 'Enter') e.target.blur(); } });
+      return h('div', { class: 'fin-money-f' }, h('span', null, '$'), inp);
+    };
+    const dateF = key => h('input', { type: 'date', class: 'field', value: f[key], 'aria-label': key === 'desde' ? 'Desde' : 'Hasta',
+      onchange: async e => { f[key] = e.target.value; if (rangeOn(f)) await ensureRange(table); render(false); } });
+    const panel = h('div', { class: 'fin-fpanel' },
+      h('div', null, h('span', { class: 'label' }, 'Categoría'),
+        h('div', { class: 'fin-cats' }, Object.entries(cats).map(([k, c]) => {
+          const p = PALETTES[c.color], on = f.cats.includes(k);
+          return h('button', { type: 'button', class: 'fin-cat', role: 'checkbox', 'aria-checked': on ? 'true' : 'false', style: { '--c': p.ac, '--c-bg': p.bg, '--c-bd': p.bd },
+            onclick: () => { f.cats = on ? f.cats.filter(x => x !== k) : f.cats.concat(k); render(false); } }, h('b', null, c.abbr), c.label);
+        }))),
+      h('div', { class: 'fin-fgrid' },
+        h('div', null, h('span', { class: 'label' }, 'Precio'), h('div', { class: 'fin-frange' }, moneyF('min', 'Desde'), h('i', null, '–'), moneyF('max', 'Hasta'))),
+        table !== 'clientes' ? h('div', null, h('span', { class: 'label' }, table === 'pagos' ? 'Fecha de pago' : 'Fecha del gasto'), h('div', { class: 'fin-frange' }, dateF('desde'), h('i', null, '–'), dateF('hasta'))) : null),
+      h('div', { class: 'fin-factions' },
+        rangeOn(f) ? h('small', { class: 'fin-muted' }, 'Con rango de fechas se buscan todos los meses.') : h('span'),
+        n ? h('button', { type: 'button', class: 'btn small ghost', onclick: () => { Object.assign(f, blankFilter(), { q: f.q, estado: f.estado }); render(false); } }, 'Limpiar filtros') : null));
+    return h('div', { class: 'fin-fwrap' }, row, panel);
+  }
+
+  /* ---------- Selección múltiple ---------- */
+  let bulkEl = null;
+  function selCell(id) {
+    const cb = h('input', { type: 'checkbox', class: 'fin-check', checked: S.sel.has(id), 'aria-label': 'Seleccionar fila',
+      onchange: e => { if (e.target.checked) S.sel.add(id); else S.sel.delete(id); e.target.closest('tr').classList.toggle('picked', e.target.checked); syncHeadCheck(e.target.closest('table')); drawBulk(); } });
+    return h('td', { class: 'sel' }, cb);
+  }
+  function selHead(ids) {
+    const all = ids.length && ids.every(id => S.sel.has(id));
+    const cb = h('input', { type: 'checkbox', class: 'fin-check', checked: all, 'aria-label': 'Seleccionar todas las filas',
+      onchange: e => { ids.forEach(id => e.target.checked ? S.sel.add(id) : S.sel.delete(id)); const t = e.target.closest('table'); t.querySelectorAll('tbody .fin-check').forEach(c => { c.checked = e.target.checked; c.closest('tr').classList.toggle('picked', e.target.checked); }); drawBulk(); } });
+    cb.indeterminate = !all && ids.some(id => S.sel.has(id));
+    return h('th', { class: 'sel' }, cb);
+  }
+  function syncHeadCheck(table) {
+    const boxes = [...table.querySelectorAll('tbody .fin-check')], head = table.querySelector('thead .fin-check');
+    if (!head) return;
+    const n = boxes.filter(b => b.checked).length;
+    head.checked = n && n === boxes.length; head.indeterminate = n > 0 && n < boxes.length;
+  }
+  function drawBulk(table) {
+    if (!bulkEl) { bulkEl = h('div', { class: 'fin-bulk', role: 'region', 'aria-label': 'Acciones de selección' }); document.body.append(bulkEl); }
+    if (table) bulkEl.dataset.table = table;
+    const n = S.sel.size;
+    bulkEl.classList.toggle('show', n > 0);
+    bulkEl.innerHTML = '';
+    if (!n) return;
+    const t = bulkEl.dataset.table;
+    const label = t === 'clientes' ? (n === 1 ? 'cliente' : 'clientes') : t === 'gastos' ? (n === 1 ? 'gasto' : 'gastos') : (n === 1 ? 'pago' : 'pagos');
+    const base = () => {
+      bulkEl.innerHTML = '';
+      bulkEl.append(h('b', null, `${n} ${label} ${n === 1 ? 'seleccionado' : 'seleccionados'}`),
+        h('button', { type: 'button', class: 'btn small danger', onclick: confirm }, icon('papelera'), 'Eliminar'),
+        h('button', { type: 'button', class: 'btn small ghost', onclick: () => { S.sel.clear(); render(false); } }, 'Cancelar'));
+    };
+    const confirm = () => {
+      bulkEl.innerHTML = '';
+      bulkEl.append(h('b', null, `¿Eliminar ${n} ${label}? No se puede deshacer.`),
+        h('button', { type: 'button', class: 'btn small danger', onclick: async e => {
+          e.currentTarget.disabled = true;
+          let ok = 0, fail = 0;
+          for (const id of [...S.sel]) { try { await store.remove(t, id); ok++; } catch (x) { fail++; } }
+          S.sel.clear(); S.range = {};
+          toast(fail ? `${ok} eliminados · ${fail} no se pudieron${t === 'clientes' ? ' (tienen pagos; desactívalos)' : ''}` : `${ok} ${ok === 1 ? 'eliminado' : 'eliminados'}`);
+          await refresh();
+        } }, 'Sí, eliminar'),
+        h('button', { type: 'button', class: 'btn small ghost', onclick: base }, 'No'));
+    };
+    base();
+  }
+
+  /* ---------- Piezas de tabla ---------- */
+  const dateBubble = (iso, extra) => h('span', { class: 'fin-date' }, h('i'), dateShort(iso), extra ? h('em', null, extra) : null);
+  const monthBubble = mes => h('span', { class: 'fin-date month' }, monthLabel(mes));
+  const emptyFiltered = () => h('div', { class: 'block fin-empty fin-rise' }, h('h3', null, 'Nada coincide con los filtros'), h('p', { class: 'help' }, 'Cambia la búsqueda o limpia los filtros.'));
+
+  /* =====================================================================
      PAGOS (tabla)
      ===================================================================== */
   function viewPagos(body) {
-    const rows = S.pagos.filter(p => (S.filtroEstado === 'todos' || estado(p) === S.filtroEstado) && (S.filtroCat === 'todas' || p.categoria === S.filtroCat) && clienteDe(p).nombre.toLowerCase().includes(S.buscar.toLowerCase()))
-      .sort((a, b) => clienteDe(a).nombre.localeCompare(clienteDe(b).nombre));
+    const f = S.f.pagos, range = rangeOn(f);
+    const rows = applyFilters('pagos', sourceFor('pagos')).sort((a, b) => (range ? b.mes.localeCompare(a.mes) : 0) || clienteDe(a).nombre.localeCompare(clienteDe(b).nombre));
     const sinCobro = S.clientes.filter(c => c.activo && c.categoria === 'mensual' && !S.pagos.some(p => p.cliente_id === c.id));
-    const search = h('input', { class: 'field', type: 'search', id: 'fin-buscar', placeholder: 'Buscar cliente', value: S.buscar, oninput: e => { S.buscar = e.target.value; const pos = e.target.selectionStart; render(false); const el = $('#fin-buscar'); el.focus(); el.setSelectionRange(pos, pos); } });
+    drawBulk('pagos');
     body.append(h('div', { class: 'fin-tools fin-rise' },
-      h('h2', { class: 'fin-h2' }, 'Pagos de ' + monthLabel(S.mes)),
-      h('div', { class: 'fin-filters' },
-        segment([['todos', 'Todos'], ['pagado', 'Pagado'], ['proceso', 'En proceso'], ['pendiente', 'Pendiente']], S.filtroEstado, v => { S.filtroEstado = v; render(false); }),
-        segment([['todas', 'Todas'], ...Object.entries(CAT_ING).map(([k, c]) => [k, c.abbr])], S.filtroCat, v => { S.filtroCat = v; render(false); }),
-        search),
-      sinCobro.length ? h('button', { type: 'button', class: 'btn', onclick: () => generarMensuales(sinCobro) }, `+ Generar ${sinCobro.length} ${sinCobro.length === 1 ? 'cobro mensual' : 'cobros mensuales'}`) : null));
-    if (!S.pagos.length) { body.append(h('div', { class: 'block fin-empty fin-rise' }, h('h3', null, 'Sin pagos este mes'), h('p', { class: 'help' }, 'Usa "Registrar pago" o genera los cobros de los clientes de marketing mensual.'))); return; }
-    const sum = (f) => rows.reduce((s, p) => s + f(p), 0);
+      h('h2', { class: 'fin-h2' }, range ? 'Pagos · ' + (f.desde ? dateShort(f.desde) : 'inicio') + ' a ' + (f.hasta ? dateShort(f.hasta) : 'hoy') : 'Pagos de ' + monthLabel(S.mes)),
+      h('div', { class: 'fin-row-btns' },
+        sinCobro.length && !range ? h('button', { type: 'button', class: 'btn', onclick: () => generarMensuales(sinCobro) }, `+ Generar ${sinCobro.length} ${sinCobro.length === 1 ? 'cobro mensual' : 'cobros mensuales'}`) : null,
+        h('button', { type: 'button', class: 'btn', onclick: () => openCliente() }, icon('mas'), 'Agregar cliente'),
+        h('button', { type: 'button', class: 'btn primary', onclick: () => openPago() }, icon('mas'), 'Registrar pago'))));
+    body.append(h('div', { class: 'fin-rise' }, filterBar('pagos', CAT_ING, 'Buscar cliente')));
+    if (!sourceFor('pagos').length) { body.append(h('div', { class: 'block fin-empty fin-rise' }, h('h3', null, 'Sin pagos este mes'), h('p', { class: 'help' }, 'Usa "Registrar pago" o genera los cobros de los clientes de marketing mensual.'))); return; }
+    if (!rows.length) { body.append(emptyFiltered()); return; }
+    const sum = fn => rows.reduce((s, p) => s + fn(p), 0);
     body.append(h('div', { class: 'fin-table-wrap fin-rise' }, h('table', { class: 'fin-table' },
-      h('thead', null, h('tr', null, ['Cliente', 'Cat.', 'Valor', 'Avance', 'Recibido', 'Por cobrar', 'Último pago', 'Estado', ''].map((c, i) => h('th', { class: i >= 2 && i <= 5 ? 'num' : '' }, c)))),
+      h('thead', null, h('tr', null, selHead(rows.map(r => r.id)), ...['Cliente', 'Valor', 'Avance', 'Recibido', 'Por cobrar', 'Pagos realizados', 'Estado', ''].map((c, i) => h('th', { class: i >= 1 && i <= 4 ? 'num' : '' }, c)))),
       h('tbody', null, rows.map(p => {
         const e = estado(p), av = avance(p);
-        return h('tr', null,
-          h('td', { class: 'name' }, h('b', null, clienteDe(p).nombre), p.concepto ? h('small', null, p.concepto) : null),
-          h('td', null, chipAbbr(p.categoria, CAT_ING)),
-          h('td', { class: 'num' }, money(p.valor)),
-          h('td', { class: 'num' }, h('div', { class: 'fin-prog' }, growBar(av)), h('small', null, av + '%')),
+        const abonos = (p.abonos || []).slice().sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+        return h('tr', { class: S.sel.has(p.id) ? 'picked' : '' },
+          selCell(p.id),
+          h('td', { class: 'name' }, h('div', { class: 'fin-cell-name' }, chipAbbr(p.categoria, CAT_ING), h('div', null, h('b', null, clienteDe(p).nombre), h('small', null, [range ? monthLabel(p.mes) : null, p.concepto].filter(Boolean).join(' · ') || CAT_ING[p.categoria].label)))),
+          h('td', { class: 'num strong' }, money(p.valor)),
+          h('td', { class: 'num' }, h('div', { class: 'fin-prog-cell' }, h('div', { class: 'fin-prog' }, growBar(av)), h('small', null, av + '%'))),
           h('td', { class: 'num' }, money(pagado(p))),
           h('td', { class: 'num' }, money(Math.max(0, Number(p.valor) - pagado(p)))),
-          h('td', null, dateShort(ultimoPago(p))),
+          h('td', null, abonos.length ? h('div', { class: 'fin-dates' }, abonos.map(a => dateBubble(a.fecha, money(a.valor)))) : h('span', { class: 'fin-muted' }, 'Sin pagos')),
           h('td', null, estadoChip(e)),
           h('td', { class: 'acts' }, rowActions('pagos', p, [e !== 'pagado' ? ['Abonar', () => openPago({ cliente_id: p.cliente_id })] : null, ['Editar', () => openCobro(p)]])));
       })),
-      h('tfoot', null, h('tr', null, h('td', null, rows.length + ' cobros'), h('td'), h('td', { class: 'num' }, money(sum(p => Number(p.valor)))), h('td'), h('td', { class: 'num' }, money(sum(pagado))), h('td', { class: 'num' }, money(sum(p => Math.max(0, Number(p.valor) - pagado(p))))), h('td'), h('td'), h('td'))))));
+      h('tfoot', null, h('tr', null, h('td'), h('td', null, rows.length + (rows.length === 1 ? ' cobro' : ' cobros')), h('td', { class: 'num' }, money(sum(p => Number(p.valor)))), h('td'), h('td', { class: 'num' }, money(sum(pagado))), h('td', { class: 'num' }, money(sum(p => Math.max(0, Number(p.valor) - pagado(p))))), h('td'), h('td'), h('td'))))));
   }
-
   function segment(opts, cur, on) {
     return h('div', { class: 'seg', role: 'group' }, opts.map(([v, l]) => h('button', { type: 'button', 'aria-pressed': cur === v ? 'true' : 'false', onclick: () => on(v) }, l)));
   }
@@ -530,22 +691,30 @@
      GASTOS (tabla)
      ===================================================================== */
   function viewGastos(body) {
+    const f = S.f.gastos, range = rangeOn(f);
+    drawBulk('gastos');
     body.append(h('div', { class: 'fin-tools fin-rise' },
-      h('h2', { class: 'fin-h2' }, 'Gastos de ' + monthLabel(S.mes)),
-      h('button', { type: 'button', class: 'btn', onclick: () => { S.tab = 'nomina'; render(); } }, 'La nómina está en su propia sección →')));
-    if (!S.gastos.length) { body.append(h('div', { class: 'block fin-empty fin-rise' }, h('h3', null, 'Sin gastos este mes'), h('p', { class: 'help' }, 'Usa "Registrar gasto" para el primero.'))); return; }
-    const groups = [['Gastos en recursos', S.gastos.filter(g => !esNominaGasto(g))], ['Nómina registrada como gasto (formato anterior)', S.gastos.filter(esNominaGasto)]];
+      h('h2', { class: 'fin-h2' }, range ? 'Gastos · ' + (f.desde ? dateShort(f.desde) : 'inicio') + ' a ' + (f.hasta ? dateShort(f.hasta) : 'hoy') : 'Gastos de ' + monthLabel(S.mes)),
+      h('div', { class: 'fin-row-btns' },
+        h('button', { type: 'button', class: 'btn ghost', onclick: () => { S.tab = 'nomina'; render(); } }, 'La nómina está en su propia sección →'),
+        h('button', { type: 'button', class: 'btn primary', onclick: () => openGasto() }, icon('mas'), 'Registrar gasto'))));
+    body.append(h('div', { class: 'fin-rise' }, filterBar('gastos', CAT_GAS_PICK, 'Buscar gasto')));
+    if (!sourceFor('gastos').length) { body.append(h('div', { class: 'block fin-empty fin-rise' }, h('h3', null, 'Sin gastos este mes'), h('p', { class: 'help' }, 'Usa "Registrar gasto" para el primero.'))); return; }
+    const rows = applyFilters('gastos', sourceFor('gastos')).sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+    if (!rows.length) { body.append(emptyFiltered()); return; }
+    const groups = [['Gastos en recursos', rows.filter(g => !esNominaGasto(g))], ['Nómina registrada como gasto (formato anterior)', rows.filter(esNominaGasto)]];
     groups.forEach(([title, list]) => {
       if (!list.length) return;
       const tot = list.filter(g => g.movimiento !== 'entrada').reduce((s, g) => s + Number(g.valor), 0);
-      body.append(h('h3', { class: 'fin-h3' }, title, h('span', null, money(tot))));
+      body.append(h('h3', { class: 'fin-h3 fin-rise' }, title, h('span', null, list.length + (list.length === 1 ? ' gasto · ' : ' gastos · ') + money(tot))));
       body.append(h('div', { class: 'fin-table-wrap fin-rise' }, h('table', { class: 'fin-table' },
-        h('thead', null, h('tr', null, ['Concepto', 'Categoría', 'Fecha', 'Valor', ''].map((c, i) => h('th', { class: i === 3 ? 'num' : '' }, c)))),
-        h('tbody', null, list.map(g => h('tr', null,
+        h('thead', null, h('tr', null, selHead(list.map(g => g.id)), ...['Concepto', 'Categoría', 'Fecha', 'Valor', ''].map((c, i) => h('th', { class: i === 3 ? 'num' : '' }, c)))),
+        h('tbody', null, list.map(g => h('tr', { class: S.sel.has(g.id) ? 'picked' : '' },
+          selCell(g.id),
           h('td', { class: 'name' }, h('b', null, g.concepto), g.movimiento === 'entrada' ? h('small', null, 'Entra a Brandgo · no suma como gasto') : (g.notas ? h('small', null, g.notas) : null)),
           h('td', null, chip(g.categoria, CAT_GAS)),
-          h('td', null, dateShort(g.fecha)),
-          h('td', { class: 'num' }, (g.movimiento === 'entrada' ? '+' : '') + money(g.valor)),
+          h('td', null, dateBubble(g.fecha)),
+          h('td', { class: 'num strong' }, (g.movimiento === 'entrada' ? '+' : '') + money(g.valor)),
           h('td', { class: 'acts' }, rowActions('gastos', g, [['Editar', () => openGasto(g)]]))))))));
     });
   }
@@ -725,18 +894,23 @@
      CLIENTES
      ===================================================================== */
   function viewClientes(body) {
+    drawBulk('clientes');
     body.append(h('div', { class: 'fin-tools fin-rise' }, h('h2', { class: 'fin-h2' }, 'Clientes'),
-      h('button', { type: 'button', class: 'btn primary', onclick: () => openCliente() }, '+ Nuevo cliente')));
+      h('button', { type: 'button', class: 'btn primary', onclick: () => openCliente() }, icon('mas'), 'Nuevo cliente')));
     if (!S.clientes.length) { body.append(h('div', { class: 'block fin-empty fin-rise' }, h('h3', null, 'Aún no hay clientes'), h('p', { class: 'help' }, 'Crea el perfil de cada cliente con su categoría, el valor que representa y su día de pago.'))); return; }
+    body.append(h('div', { class: 'fin-rise' }, filterBar('clientes', CAT_ING, 'Buscar cliente')));
+    const rows = applyFilters('clientes', S.clientes);
+    if (!rows.length) { body.append(emptyFiltered()); return; }
     body.append(h('div', { class: 'fin-table-wrap fin-rise' }, h('table', { class: 'fin-table' },
-      h('thead', null, h('tr', null, ['Cliente', 'Categoría', 'Valor', 'Día de pago', 'Este mes', ''].map((c, i) => h('th', { class: i === 2 ? 'num' : '' }, c)))),
-      h('tbody', null, S.clientes.map(c => {
+      h('thead', null, h('tr', null, selHead(rows.map(c => c.id)), ...['Cliente', 'Categoría', 'Valor', 'Día de pago', monthLabel(S.mes), ''].map((c, i) => h('th', { class: i === 2 ? 'num' : '' }, c)))),
+      h('tbody', null, rows.map(c => {
         const p = S.pagos.find(x => x.cliente_id === c.id);
-        return h('tr', { class: c.activo ? '' : 'off' },
+        return h('tr', { class: (c.activo ? '' : 'off') + (S.sel.has(c.id) ? ' picked' : '') },
+          selCell(c.id),
           h('td', { class: 'name' }, h('b', null, c.nombre), c.activo ? (c.notas ? h('small', null, c.notas) : null) : h('small', null, 'Inactivo')),
           h('td', null, chip(c.categoria, CAT_ING)),
-          h('td', { class: 'num' }, money(c.valor)),
-          h('td', null, c.dia_pago ? 'Día ' + c.dia_pago : '—'),
+          h('td', { class: 'num strong' }, money(c.valor)),
+          h('td', null, c.dia_pago ? h('span', { class: 'fin-date' }, h('i'), 'Día ' + c.dia_pago) : h('span', { class: 'fin-muted' }, '—')),
           h('td', null, p ? estadoChip(estado(p)) : h('span', { class: 'fin-muted' }, 'Sin cobro')),
           h('td', { class: 'acts' }, rowActions('clientes', c, [['Registrar pago', () => openPago({ cliente_id: c.id })], ['Editar', () => openCliente(c)]])));
       })))));
