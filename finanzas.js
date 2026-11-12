@@ -32,7 +32,7 @@
     nomina: { label: 'Nómina', abbr: 'NO', color: 'verde' },
     extra:  { label: 'Servicio extra', abbr: 'SX', color: 'violeta' }
   };
-  const AVATARS = { camilo: 'Camilo', juca: 'Juca', laura: 'Laura', malu: 'Malu', mauro: 'Mauro' };
+  const AVATARS = { camilo: 'Camilo', juca: 'Juca', laura: 'Laura', malu: 'Malu', mauro: 'Mauro', paula: 'Paula', mariale: 'Mariale' };
   const ESTADOS = { pagado: { label: 'Pagado', cls: 'ok' }, proceso: { label: 'En proceso', cls: 'mid' }, pendiente: { label: 'Pendiente', cls: 'no' } };
 
   /* ---------------- Fechas y dinero ---------------- */

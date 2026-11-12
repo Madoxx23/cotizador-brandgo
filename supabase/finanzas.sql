@@ -132,7 +132,7 @@ create table if not exists public.equipo (
   id          uuid primary key default gen_random_uuid(),
   nombre      text not null check (length(trim(nombre)) between 1 and 120),
   rol         text check (length(rol) <= 80),
-  avatar      text check (avatar in ('camilo', 'juca', 'laura', 'malu', 'mauro')),
+  avatar      text check (avatar in ('camilo', 'juca', 'laura', 'malu', 'mauro', 'paula', 'mariale')),
   tipo        text not null default 'nomina' check (tipo in ('nomina', 'extra')),
   salario     numeric(14, 0) not null default 0 check (salario >= 0),
   dia_pago    smallint default 15 check (dia_pago between 1 and 31),
