@@ -1,0 +1,748 @@
+/* Finanzas — Brandgo
+   Acceso con correo y contraseña (Supabase Auth). Los datos viven en Supabase protegidos por
+   Row Level Security: solo las cuentas de la tabla `miembros` pueden leerlos o escribirlos. */
+(function () {
+  'use strict';
+  const { A, PALETTES, h, fmtMoney, toast } = window.BG;
+  const $ = s => document.querySelector(s);
+  const app = $('#app');
+  const CFG = window.FINANZAS_CONFIG || {};
+  const INACTIVITY_MS = 20 * 60 * 1000;
+
+  /* ---------------- Catálogos ---------------- */
+  const CAT_ING = {
+    mensual:  { label: 'Marketing mensual', abbr: 'MM', color: 'azul' },
+    campana:  { label: 'Campaña', abbr: 'CP', color: 'rosa' },
+    servicio: { label: 'Servicio', abbr: 'SV', color: 'naranja' }
+  };
+  const CAT_GAS = {
+    hormiga:     { label: 'Gasto hormiga', abbr: 'GH', color: 'amarillo' },
+    servicios:   { label: 'Servicios', abbr: 'SE', color: 'violeta' },
+    insumos:     { label: 'Compra de insumos', abbr: 'IN', color: 'naranja' },
+    prestamo:    { label: 'Préstamo', abbr: 'PR', color: 'rosa' },
+    alquiler:    { label: 'Alquiler', abbr: 'AL', color: 'azul' },
+    equipos:     { label: 'Compra de equipos', abbr: 'EQ', color: 'turquesa' },
+    suscripcion: { label: 'Suscripción', abbr: 'SU', color: 'verde' },
+    nomina:      { label: 'Nómina', abbr: 'NO', color: 'azul' },
+    extra:       { label: 'Servicio extra', abbr: 'SX', color: 'violeta' }
+  };
+  const ESTADOS = { pagado: { label: 'Pagado', cls: 'ok' }, proceso: { label: 'En proceso', cls: 'mid' }, pendiente: { label: 'Pendiente', cls: 'no' } };
+
+  /* ---------------- Fechas y dinero ---------------- */
+  const pad = n => String(n).padStart(2, '0');
+  const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+  const monthOf = iso => iso.slice(0, 7) + '-01';
+  const addMonths = (mes, k) => { const [y, m] = mes.split('-').map(Number); const d = new Date(y, m - 1 + k, 1); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-01`; };
+  const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+  const monthLabel = mes => { const [y, m] = mes.split('-').map(Number); return MESES[m - 1] + ' ' + y; };
+  const dateShort = iso => { if (!iso) return '—'; const [y, m, d] = iso.split('-').map(Number); return `${d} ${MESES[m - 1].slice(0, 3).toLowerCase()} ${y}`; };
+  const money = n => '$' + fmtMoney(n);
+  const num = v => Number(String(v == null ? '' : v).replace(/[^\d]/g, '')) || 0;
+
+  /* ---------------- Lógica de pagos ---------------- */
+  const pagado = p => (p.abonos || []).reduce((s, a) => s + (Number(a.valor) || 0), 0);
+  const avance = p => (Number(p.valor) > 0 ? Math.min(100, Math.round(pagado(p) / Number(p.valor) * 100)) : (pagado(p) > 0 ? 100 : 0));
+  const estado = p => { const pg = pagado(p); if (pg <= 0) return 'pendiente'; if (pg >= Number(p.valor)) return 'pagado'; return 'proceso'; };
+  const ultimoPago = p => (p.abonos || []).map(a => a.fecha).filter(Boolean).sort().pop() || '';
+
+  /* =====================================================================
+     DATOS: Supabase (producción) o memoria local (solo localhost con ?demo)
+     ===================================================================== */
+  const isDemo = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) && new URLSearchParams(location.search).has('demo');
+
+  function supabaseStore() {
+    const sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, {
+      auth: { storage: window.sessionStorage, persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
+    });
+    const ok = r => { if (r.error) throw r.error; return r.data; };
+    return {
+      async session() { return ok(await sb.auth.getSession()).session; },
+      async signIn(email, password) { return ok(await sb.auth.signInWithPassword({ email, password })).session; },
+      async signOut() { await sb.auth.signOut(); },
+      async isMember(uid) { return !!ok(await sb.from('miembros').select('user_id').eq('user_id', uid).maybeSingle()); },
+      async clientes() { return ok(await sb.from('clientes').select('*').order('nombre')); },
+      async pagos(mes) { return ok(await sb.from('pagos').select('*').eq('mes', mes).order('created_at')); },
+      async gastos(mes) { return ok(await sb.from('gastos').select('*').eq('mes', mes).order('fecha')); },
+      async insert(t, row) { return ok(await sb.from(t).insert(row).select().single()); },
+      async insertMany(t, rows) { return ok(await sb.from(t).insert(rows).select()); },
+      async update(t, id, patch) { return ok(await sb.from(t).update(patch).eq('id', id).select().single()); },
+      async remove(t, id) { ok(await sb.from(t).delete().eq('id', id)); }
+    };
+  }
+
+  function demoStore() {
+    let db = { clientes: [], pagos: [], gastos: [] }; let session = null;
+    const ready = fetch('/__scratch/demo-data.json').then(r => r.ok ? r.json() : db).then(d => { db = d; }).catch(() => {});
+    const id = () => 'd' + Math.random().toString(36).slice(2, 10);
+    return {
+      async session() { await ready; return session; },
+      async signIn(email) { await ready; session = { user: { id: 'demo', email } }; return session; },
+      async signOut() { session = null; },
+      async isMember() { return true; },
+      async clientes() { return db.clientes.slice().sort((a, b) => a.nombre.localeCompare(b.nombre)); },
+      async pagos(mes) { return db.pagos.filter(p => p.mes === mes); },
+      async gastos(mes) { return db.gastos.filter(g => g.mes === mes).sort((a, b) => a.fecha.localeCompare(b.fecha)); },
+      async insert(t, row) { const r = Object.assign({ id: id(), created_at: new Date().toISOString() }, row); db[t].push(r); return r; },
+      async insertMany(t, rows) { return Promise.all(rows.map(r => this.insert(t, r))); },
+      async update(t, rid, patch) { const r = db[t].find(x => x.id === rid); Object.assign(r, patch); return r; },
+      async remove(t, rid) { db[t] = db[t].filter(x => x.id !== rid); }
+    };
+  }
+
+  const configured = !!(CFG.supabaseUrl && CFG.supabaseAnonKey && window.supabase);
+  const store = isDemo ? demoStore() : (configured ? supabaseStore() : null);
+
+  /* ---------------- Estado de la vista ---------------- */
+  const S = { user: null, mes: monthOf(todayISO()), tab: 'resumen', clientes: [], pagos: [], gastos: [], prev: null, filtroEstado: 'todos', filtroCat: 'todas', buscar: '' };
+  try { const t = sessionStorage.getItem('fin-tab'); if (t) S.tab = t; } catch (e) { /* sin almacenamiento */ }
+
+  async function load() {
+    const prevMes = addMonths(S.mes, -1);
+    const [clientes, pagos, gastos, pp, pg] = await Promise.all([store.clientes(), store.pagos(S.mes), store.gastos(S.mes), store.pagos(prevMes), store.gastos(prevMes)]);
+    Object.assign(S, { clientes, pagos, gastos, prev: { pagos: pp, gastos: pg } });
+  }
+  const clienteDe = p => S.clientes.find(c => c.id === p.cliente_id) || { nombre: 'Cliente eliminado', categoria: p.categoria };
+
+  function totals(pagos, gastos) {
+    const facturado = pagos.reduce((s, p) => s + Number(p.valor), 0);
+    const recibido = pagos.reduce((s, p) => s + pagado(p), 0);
+    const salidas = gastos.filter(g => g.movimiento !== 'entrada');
+    const nomina = salidas.filter(g => g.categoria === 'nomina' || g.categoria === 'extra').reduce((s, g) => s + Number(g.valor), 0);
+    const gastosRec = salidas.filter(g => g.categoria !== 'nomina' && g.categoria !== 'extra').reduce((s, g) => s + Number(g.valor), 0);
+    const entradas = gastos.filter(g => g.movimiento === 'entrada').reduce((s, g) => s + Number(g.valor), 0);
+    return { facturado, recibido, porCobrar: facturado - recibido, nomina, gastos: gastosRec, entradas, saldo: facturado - nomina - gastosRec, caja: recibido - nomina - gastosRec };
+  }
+
+  /* =====================================================================
+     PANTALLAS DE ACCESO
+     ===================================================================== */
+  function chip(cat, map) { const c = map[cat] || { label: cat, abbr: '?', color: 'violeta' }; const p = PALETTES[c.color]; return h('span', { class: 'fin-chip', title: c.label, style: { '--c': p.ac, '--c-bg': p.bg, '--c-bd': p.bd } }, h('b', null, c.abbr), c.label); }
+  function chipAbbr(cat, map) { const c = map[cat]; const p = PALETTES[c.color]; return h('span', { class: 'fin-chip only', title: c.label, style: { '--c': p.ac, '--c-bg': p.bg, '--c-bd': p.bd } }, h('b', null, c.abbr)); }
+  function estadoChip(e) { return h('span', { class: 'fin-st ' + ESTADOS[e].cls }, h('i'), ESTADOS[e].label); }
+
+  function screenSetup() {
+    app.innerHTML = '';
+    app.append(h('section', { class: 'fin-lock' },
+      h('img', { src: A.logo, alt: '', class: 'fin-lock-logo' }),
+      h('p', { class: 'eyebrow' }, 'Finanzas · Acceso restringido'),
+      h('h1', { class: 'q' }, 'Falta conectar la base de datos segura'),
+      h('p', { class: 'help' }, 'Este módulo guarda los datos en Supabase y solo deja entrar con correo y contraseña. Mientras no esté conectado, no se muestra ni se guarda ningún dato financiero.'),
+      h('p', { class: 'help' }, 'Sigue los pasos de FINANZAS-SEGURIDAD.md en el repositorio y llena finanzas-config.js con la URL y la clave pública del proyecto.')));
+  }
+
+  function screenLogin(msg) {
+    app.innerHTML = '';
+    const email = h('input', { class: 'field', type: 'email', id: 'fin-email', autocomplete: 'username', required: true, placeholder: 'correo@brandgo.co' });
+    const pass = h('input', { class: 'field', type: 'password', id: 'fin-pass', autocomplete: 'current-password', required: true, minlength: 8 });
+    const err = h('div', { class: 'fin-err', role: 'alert' }, msg || '');
+    const btn = h('button', { class: 'btn primary huge', type: 'submit' }, 'Entrar');
+    const form = h('form', { class: 'block fin-login', onsubmit: async e => {
+      e.preventDefault(); err.textContent = ''; btn.disabled = true; btn.textContent = 'Verificando…';
+      try {
+        const s = await store.signIn(email.value.trim(), pass.value);
+        pass.value = '';
+        await enter(s);
+      } catch (x) {
+        err.textContent = /invalid|credentials/i.test(x.message || '') ? 'Correo o contraseña incorrectos.' : 'No se pudo iniciar sesión. Revisa tu conexión e intenta de nuevo.';
+        btn.disabled = false; btn.textContent = 'Entrar';
+      }
+    } },
+      h('div', null, h('label', { class: 'label', for: 'fin-email' }, 'Correo'), email),
+      h('div', null, h('label', { class: 'label', for: 'fin-pass' }, 'Contraseña'), pass),
+      err, btn);
+    app.append(h('section', { class: 'fin-lock' },
+      h('img', { src: A.logo, alt: '', class: 'fin-lock-logo' }),
+      h('p', { class: 'eyebrow' }, isDemo ? 'Modo de prueba local · datos de ejemplo' : 'Finanzas · Acceso restringido'),
+      h('h1', { class: 'q' }, 'Entra con tu cuenta'),
+      h('p', { class: 'help' }, 'Solo las personas autorizadas pueden ver las finanzas de Brandgo. La sesión se cierra sola al cerrar el navegador o tras 20 minutos sin actividad.'),
+      form));
+    setTimeout(() => email.focus(), 30);
+  }
+
+  async function enter(session) {
+    if (!session) return screenLogin();
+    let member = false;
+    try { member = await store.isMember(session.user.id); } catch (e) { member = false; }
+    if (!member) { await store.signOut(); return screenLogin('Tu cuenta no tiene acceso a Finanzas. Pide a un administrador que te agregue.'); }
+    S.user = session.user;
+    $('#topUser').textContent = session.user.email || 'Sesión activa';
+    $('#logoutBtn').hidden = false;
+    armInactivity();
+    await refresh();
+  }
+
+  async function logout(msg) {
+    try { await store.signOut(); } catch (e) { /* noop */ }
+    Object.assign(S, { user: null, clientes: [], pagos: [], gastos: [], prev: null });
+    $('#topUser').textContent = 'Acceso restringido';
+    $('#logoutBtn').hidden = true;
+    closeSheet();
+    screenLogin(msg);
+  }
+  $('#logoutBtn').addEventListener('click', () => logout());
+
+  let idleT;
+  function armInactivity() {
+    const reset = () => { clearTimeout(idleT); if (S.user) idleT = setTimeout(() => logout('Cerramos tu sesión por inactividad. Vuelve a entrar.'), INACTIVITY_MS); };
+    ['pointerdown', 'keydown', 'scroll'].forEach(ev => window.addEventListener(ev, reset, { passive: true }));
+    reset();
+  }
+
+  /* =====================================================================
+     ESTRUCTURA PRINCIPAL
+     ===================================================================== */
+  const TABS = [['resumen', 'RS', 'Resumen'], ['pagos', 'PG', 'Pagos'], ['gastos', 'GS', 'Gastos'], ['clientes', 'CL', 'Clientes']];
+
+  async function refresh() {
+    try { await load(); } catch (e) { console.error(e); toast('No se pudieron cargar los datos'); }
+    render();
+  }
+
+  function render() {
+    if (!S.user) return;
+    app.innerHTML = '';
+    const monthInput = h('input', { type: 'month', class: 'field', id: 'fin-mes', value: S.mes.slice(0, 7), 'aria-label': 'Mes', onchange: e => { if (e.target.value) { S.mes = e.target.value + '-01'; refresh(); } } });
+    app.append(
+      h('div', { class: 'fin-head' },
+        h('div', null, h('p', { class: 'eyebrow' }, 'Finanzas Brandgo'), h('h1', { class: 'q fin-title' }, '¿Qué vas a registrar hoy?')),
+        h('div', { class: 'fin-quick' },
+          h('button', { type: 'button', class: 'fin-qa pay', onclick: () => openPago() }, h('b', null, 'PG'), h('span', null, h('strong', null, 'Registrar pago'), h('small', null, 'Un cliente pagó'))),
+          h('button', { type: 'button', class: 'fin-qa exp', onclick: () => openGasto() }, h('b', null, 'GS'), h('span', null, h('strong', null, 'Registrar gasto'), h('small', null, 'Salió dinero'))))),
+      h('div', { class: 'fin-bar' },
+        h('nav', { class: 'fin-tabs', 'aria-label': 'Secciones' }, TABS.map(([k, ab, lb]) => h('button', { type: 'button', class: S.tab === k ? 'on' : '', 'aria-current': S.tab === k ? 'page' : null, onclick: () => { S.tab = k; try { sessionStorage.setItem('fin-tab', k); } catch (e) { /* noop */ } render(); } }, h('b', null, ab), lb))),
+        h('div', { class: 'fin-month' },
+          h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Mes anterior', onclick: () => { S.mes = addMonths(S.mes, -1); refresh(); } }, '‹'),
+          monthInput,
+          h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Mes siguiente', onclick: () => { S.mes = addMonths(S.mes, 1); refresh(); } }, '›'))));
+    const body = h('div', { class: 'fin-body' });
+    app.append(body);
+    ({ resumen: viewResumen, pagos: viewPagos, gastos: viewGastos, clientes: viewClientes })[S.tab](body);
+  }
+
+  /* ---------------- Tooltip de gráficas ---------------- */
+  const tip = $('#tip');
+  function bindTip(el, text) {
+    el.addEventListener('pointermove', e => { tip.hidden = false; tip.textContent = text; tip.style.left = Math.min(window.innerWidth - tip.offsetWidth - 8, e.clientX + 14) + 'px'; tip.style.top = (e.clientY + 14) + 'px'; });
+    el.addEventListener('pointerleave', () => { tip.hidden = true; });
+  }
+
+  /* =====================================================================
+     RESUMEN (dashboard)
+     ===================================================================== */
+  function delta(cur, prev, invert) {
+    if (!prev) return h('small', { class: 'fin-delta' }, 'Sin datos del mes anterior');
+    const d = cur - prev; const pct = Math.round(d / prev * 100);
+    const good = invert ? d <= 0 : d >= 0;
+    return h('small', { class: 'fin-delta ' + (d === 0 ? '' : good ? 'up' : 'down') }, (d >= 0 ? '▲ ' : '▼ ') + Math.abs(pct) + '% vs ' + monthLabel(addMonths(S.mes, -1)).split(' ')[0].toLowerCase());
+  }
+
+  function barChart(rows, total, opts) {
+    // rows: [{label, abbr, value, color, sub}] — barras horizontales con etiqueta directa
+    const max = Math.max(1, ...rows.map(r => r.value));
+    return h('div', { class: 'fin-bars' }, rows.map(r => {
+      const p = PALETTES[r.color] || PALETTES.azul;
+      const bar = h('div', { class: 'fin-bar-row' },
+        h('div', { class: 'fin-bar-lb' }, r.abbr ? h('b', { style: { color: p.ac } }, r.abbr) : null, r.label),
+        h('div', { class: 'fin-bar-track' }, h('i', { style: { width: Math.max(r.value > 0 ? 2 : 0, r.value / max * 100) + '%', background: opts && opts.single ? 'var(--brand)' : p.ac } })),
+        h('div', { class: 'fin-bar-v' }, money(r.value)));
+      bindTip(bar, `${r.label}: ${money(r.value)}${total ? ' · ' + Math.round(r.value / total * 100) + '%' : ''}${r.sub ? ' · ' + r.sub : ''}`);
+      return bar;
+    }));
+  }
+
+  function viewResumen(body) {
+    const t = totals(S.pagos, S.gastos);
+    const tp = S.prev ? totals(S.prev.pagos, S.prev.gastos) : null;
+    const has = (S.prev && (S.prev.pagos.length || S.prev.gastos.length));
+    const ml = monthLabel(S.mes);
+    if (!S.pagos.length && !S.gastos.length) {
+      body.append(h('div', { class: 'block fin-empty' }, h('h3', null, `Aún no hay movimientos en ${ml}`),
+        h('p', { class: 'help' }, 'Registra el primer pago o gasto con los botones de arriba. También puedes generar los cobros de los clientes de marketing mensual desde Pagos.')));
+      return;
+    }
+    const tiles = [
+      ['Facturado', t.facturado, tp && has ? delta(t.facturado, tp.facturado) : null, `${S.pagos.length} cobros del mes`],
+      ['Recibido', t.recibido, null, `${t.facturado ? Math.round(t.recibido / t.facturado * 100) : 0}% de lo facturado`],
+      ['Por cobrar', t.porCobrar, null, `${S.pagos.filter(p => estado(p) !== 'pagado').length} clientes con saldo`],
+      ['Nómina', t.nomina, tp && has ? delta(t.nomina, tp.nomina, true) : null, 'Incluye servicios extra'],
+      ['Gastos en recursos', t.gastos, tp && has ? delta(t.gastos, tp.gastos, true) : null, `${S.gastos.filter(g => g.categoria !== 'nomina' && g.categoria !== 'extra' && g.movimiento !== 'entrada').length} gastos`]
+    ];
+    body.append(h('div', { class: 'fin-sum-head' },
+      h('div', null, h('h2', { class: 'fin-h2' }, 'Resumen de ' + ml), h('p', { class: 'help' }, 'Saldo neto = facturado − nómina − gastos en recursos. Los préstamos que entran a Brandgo no cuentan como gasto.')),
+      h('button', { type: 'button', class: 'btn primary', id: 'pdfBtn', onclick: e => exportResumen(e.currentTarget) }, 'Exportar PDF')));
+    body.append(h('div', { class: 'fin-hero ' + (t.saldo >= 0 ? 'pos' : 'neg') },
+      h('div', null, h('span', { class: 'k' }, 'Saldo neto del mes'), h('div', { class: 'v' }, h('b', null, (t.saldo < 0 ? '−' : '') + money(Math.abs(t.saldo))), h('span', null, 'COP')),
+        h('small', null, `Con lo recibido hasta hoy, la caja va en ${(t.caja < 0 ? '−' : '') + money(Math.abs(t.caja))} COP.`)),
+      tp && has ? delta(t.saldo, tp.saldo) : null));
+    body.append(h('div', { class: 'fin-tiles' }, tiles.map(([k, v, d, s]) => h('div', { class: 'fin-tile' }, h('span', { class: 'k' }, k), h('b', null, money(v)), h('small', null, s), d))));
+
+    // Ingresos por categoría
+    const ingRows = Object.entries(CAT_ING).map(([k, c]) => { const ps = S.pagos.filter(p => p.categoria === k); return { label: c.label, abbr: c.abbr, color: c.color, value: ps.reduce((s, p) => s + Number(p.valor), 0), sub: ps.length + (ps.length === 1 ? ' cobro' : ' cobros') }; });
+    const gasRows = Object.entries(CAT_GAS).map(([k, c]) => ({ label: c.label, abbr: c.abbr, color: c.color, value: S.gastos.filter(g => g.categoria === k && g.movimiento !== 'entrada').reduce((s, g) => s + Number(g.valor), 0) })).filter(r => r.value > 0).sort((a, b) => b.value - a.value);
+    const porEstado = Object.keys(ESTADOS).map(e => { const ps = S.pagos.filter(p => estado(p) === e); return { e, n: ps.length, v: ps.reduce((s, p) => s + Number(p.valor) - pagado(p), 0), tot: ps.reduce((s, p) => s + Number(p.valor), 0) }; });
+    const pend = S.pagos.filter(p => estado(p) !== 'pagado').sort((a, b) => (Number(b.valor) - pagado(b)) - (Number(a.valor) - pagado(a)));
+
+    body.append(h('div', { class: 'fin-grid' },
+      h('section', { class: 'block' }, h('h3', null, 'Ingresos por categoría'), h('p', { class: 'fin-cap' }, 'Valor facturado del mes'), barChart(ingRows, t.facturado)),
+      h('section', { class: 'block' }, h('h3', null, 'Gastos por categoría'), h('p', { class: 'fin-cap' }, 'Incluye nómina; sin préstamos recibidos'), gasRows.length ? barChart(gasRows, t.gastos + t.nomina, { single: true }) : h('p', { class: 'help' }, 'Sin gastos este mes.')),
+      h('section', { class: 'block' }, h('h3', null, 'Estado de los cobros'),
+        h('div', { class: 'fin-states' }, porEstado.map(x => h('div', { class: 'fin-state' }, estadoChip(x.e), h('b', null, x.n), h('small', null, x.e === 'pagado' ? money(x.tot) + ' cobrados' : money(x.v) + ' por cobrar'))))),
+      h('section', { class: 'block' }, h('h3', null, 'Quién falta por pagar'),
+        pend.length ? h('div', { class: 'fin-list' }, pend.slice(0, 8).map(p => h('div', { class: 'fin-li' }, chipAbbr(p.categoria, CAT_ING), h('span', { class: 'n' }, clienteDe(p).nombre), h('span', { class: 'a' }, avance(p) + '%'), h('b', null, money(Number(p.valor) - pagado(p))),
+          h('button', { type: 'button', class: 'btn small', onclick: () => openPago({ cliente_id: p.cliente_id }) }, 'Abonar'))))
+          : h('p', { class: 'help' }, 'Todos los clientes del mes están al día.'))));
+  }
+
+  /* =====================================================================
+     PAGOS (tabla)
+     ===================================================================== */
+  function viewPagos(body) {
+    const rows = S.pagos.filter(p => (S.filtroEstado === 'todos' || estado(p) === S.filtroEstado) && (S.filtroCat === 'todas' || p.categoria === S.filtroCat) && clienteDe(p).nombre.toLowerCase().includes(S.buscar.toLowerCase()))
+      .sort((a, b) => clienteDe(a).nombre.localeCompare(clienteDe(b).nombre));
+    const sinCobro = S.clientes.filter(c => c.activo && c.categoria === 'mensual' && !S.pagos.some(p => p.cliente_id === c.id));
+    const search = h('input', { class: 'field', type: 'search', id: 'fin-buscar', placeholder: 'Buscar cliente', value: S.buscar, oninput: e => { S.buscar = e.target.value; const pos = e.target.selectionStart; render(); const el = $('#fin-buscar'); el.focus(); el.setSelectionRange(pos, pos); } });
+    body.append(h('div', { class: 'fin-tools' },
+      h('h2', { class: 'fin-h2' }, 'Pagos de ' + monthLabel(S.mes)),
+      h('div', { class: 'fin-filters' },
+        segment([['todos', 'Todos'], ['pagado', 'Pagado'], ['proceso', 'En proceso'], ['pendiente', 'Pendiente']], S.filtroEstado, v => { S.filtroEstado = v; render(); }),
+        segment([['todas', 'Todas'], ...Object.entries(CAT_ING).map(([k, c]) => [k, c.abbr])], S.filtroCat, v => { S.filtroCat = v; render(); }),
+        search),
+      sinCobro.length ? h('button', { type: 'button', class: 'btn', onclick: () => generarMensuales(sinCobro) }, `+ Generar ${sinCobro.length} ${sinCobro.length === 1 ? 'cobro mensual' : 'cobros mensuales'}`) : null));
+    if (!S.pagos.length) { body.append(h('div', { class: 'block fin-empty' }, h('h3', null, 'Sin pagos este mes'), h('p', { class: 'help' }, 'Usa "Registrar pago" o genera los cobros de los clientes de marketing mensual.'))); return; }
+    const sum = (f) => rows.reduce((s, p) => s + f(p), 0);
+    body.append(h('div', { class: 'fin-table-wrap' }, h('table', { class: 'fin-table' },
+      h('thead', null, h('tr', null, ['Cliente', 'Cat.', 'Valor', 'Avance', 'Recibido', 'Por cobrar', 'Último pago', 'Estado', ''].map((c, i) => h('th', { class: i >= 2 && i <= 5 ? 'num' : '' }, c)))),
+      h('tbody', null, rows.map(p => {
+        const e = estado(p), av = avance(p);
+        return h('tr', null,
+          h('td', { class: 'name' }, h('b', null, clienteDe(p).nombre), p.concepto ? h('small', null, p.concepto) : null),
+          h('td', null, chipAbbr(p.categoria, CAT_ING)),
+          h('td', { class: 'num' }, money(p.valor)),
+          h('td', { class: 'num' }, h('div', { class: 'fin-prog' }, h('i', { style: { width: av + '%' } })), h('small', null, av + '%')),
+          h('td', { class: 'num' }, money(pagado(p))),
+          h('td', { class: 'num' }, money(Math.max(0, Number(p.valor) - pagado(p)))),
+          h('td', null, dateShort(ultimoPago(p))),
+          h('td', null, estadoChip(e)),
+          h('td', { class: 'acts' }, rowActions('pagos', p, [e !== 'pagado' ? ['Abonar', () => openPago({ cliente_id: p.cliente_id })] : null, ['Editar', () => openCobro(p)]])));
+      })),
+      h('tfoot', null, h('tr', null, h('td', null, rows.length + ' cobros'), h('td'), h('td', { class: 'num' }, money(sum(p => Number(p.valor)))), h('td'), h('td', { class: 'num' }, money(sum(pagado))), h('td', { class: 'num' }, money(sum(p => Math.max(0, Number(p.valor) - pagado(p))))), h('td'), h('td'), h('td'))))));
+  }
+
+  function segment(opts, cur, on) {
+    return h('div', { class: 'seg', role: 'group' }, opts.map(([v, l]) => h('button', { type: 'button', 'aria-pressed': cur === v ? 'true' : 'false', onclick: () => on(v) }, l)));
+  }
+
+  function rowActions(table, row, extra) {
+    const wrap = h('div', { class: 'fin-acts' });
+    const draw = () => {
+      wrap.innerHTML = '';
+      extra.filter(Boolean).forEach(([l, fn]) => wrap.append(h('button', { type: 'button', class: 'btn small', onclick: fn }, l)));
+      wrap.append(h('button', { type: 'button', class: 'icon-btn', title: 'Eliminar', 'aria-label': 'Eliminar', onclick: () => {
+        wrap.innerHTML = '';
+        wrap.append(h('span', { class: 'confirm-row' }, '¿Eliminar?'),
+          h('button', { type: 'button', class: 'btn small danger', onclick: async () => {
+            try { await store.remove(table, row.id); toast('Eliminado'); await refresh(); }
+            catch (e) { toast(/foreign|violates/i.test(e.message || '') ? 'Este cliente tiene pagos registrados; desactívalo en vez de eliminarlo' : 'No se pudo eliminar'); draw(); }
+          } }, 'Sí'),
+          h('button', { type: 'button', class: 'btn small ghost', onclick: draw }, 'No'));
+      } }, '✕'));
+    };
+    draw();
+    return wrap;
+  }
+
+  async function generarMensuales(list) {
+    try {
+      await store.insertMany('pagos', list.map(c => ({ cliente_id: c.id, mes: S.mes, categoria: 'mensual', valor: Number(c.valor) || 0, abonos: [], concepto: 'Marketing mensual · ' + monthLabel(S.mes) })));
+      toast(`${list.length} cobros creados como pendientes`); await refresh();
+    } catch (e) { console.error(e); toast('No se pudieron crear los cobros'); }
+  }
+
+  /* =====================================================================
+     GASTOS (tabla)
+     ===================================================================== */
+  function viewGastos(body) {
+    const prevNomina = (S.prev ? S.prev.gastos : []).filter(g => g.categoria === 'nomina');
+    const tieneNomina = S.gastos.some(g => g.categoria === 'nomina');
+    body.append(h('div', { class: 'fin-tools' },
+      h('h2', { class: 'fin-h2' }, 'Gastos de ' + monthLabel(S.mes)),
+      !tieneNomina && prevNomina.length ? h('button', { type: 'button', class: 'btn', onclick: () => copiarNomina(prevNomina) }, `+ Copiar nómina de ${monthLabel(addMonths(S.mes, -1)).split(' ')[0].toLowerCase()} (${prevNomina.length})`) : null));
+    if (!S.gastos.length) { body.append(h('div', { class: 'block fin-empty' }, h('h3', null, 'Sin gastos este mes'), h('p', { class: 'help' }, 'Usa "Registrar gasto" para el primero.'))); return; }
+    const groups = [['Gastos en recursos', S.gastos.filter(g => g.categoria !== 'nomina' && g.categoria !== 'extra')], ['Nómina', S.gastos.filter(g => g.categoria === 'nomina' || g.categoria === 'extra')]];
+    groups.forEach(([title, list]) => {
+      if (!list.length) return;
+      const tot = list.filter(g => g.movimiento !== 'entrada').reduce((s, g) => s + Number(g.valor), 0);
+      body.append(h('h3', { class: 'fin-h3' }, title, h('span', null, money(tot))));
+      body.append(h('div', { class: 'fin-table-wrap' }, h('table', { class: 'fin-table' },
+        h('thead', null, h('tr', null, ['Concepto', 'Categoría', 'Fecha', 'Valor', ''].map((c, i) => h('th', { class: i === 3 ? 'num' : '' }, c)))),
+        h('tbody', null, list.map(g => h('tr', null,
+          h('td', { class: 'name' }, h('b', null, g.concepto), g.movimiento === 'entrada' ? h('small', null, 'Entra a Brandgo · no suma como gasto') : (g.notas ? h('small', null, g.notas) : null)),
+          h('td', null, chip(g.categoria, CAT_GAS)),
+          h('td', null, dateShort(g.fecha)),
+          h('td', { class: 'num' }, (g.movimiento === 'entrada' ? '+' : '') + money(g.valor)),
+          h('td', { class: 'acts' }, rowActions('gastos', g, [['Editar', () => openGasto(g)]]))))))));
+    });
+  }
+
+  async function copiarNomina(list) {
+    try {
+      await store.insertMany('gastos', list.map(g => ({ concepto: g.concepto, categoria: 'nomina', movimiento: 'salida', valor: Number(g.valor), mes: S.mes, fecha: S.mes, notas: g.notas || null })));
+      toast('Nómina copiada; ajusta valores y fechas si cambiaron'); await refresh();
+    } catch (e) { console.error(e); toast('No se pudo copiar la nómina'); }
+  }
+
+  /* =====================================================================
+     CLIENTES
+     ===================================================================== */
+  function viewClientes(body) {
+    body.append(h('div', { class: 'fin-tools' }, h('h2', { class: 'fin-h2' }, 'Clientes'),
+      h('button', { type: 'button', class: 'btn primary', onclick: () => openCliente() }, '+ Nuevo cliente')));
+    if (!S.clientes.length) { body.append(h('div', { class: 'block fin-empty' }, h('h3', null, 'Aún no hay clientes'), h('p', { class: 'help' }, 'Crea el perfil de cada cliente con su categoría, el valor que representa y su día de pago.'))); return; }
+    body.append(h('div', { class: 'fin-table-wrap' }, h('table', { class: 'fin-table' },
+      h('thead', null, h('tr', null, ['Cliente', 'Categoría', 'Valor', 'Día de pago', 'Este mes', ''].map((c, i) => h('th', { class: i === 2 ? 'num' : '' }, c)))),
+      h('tbody', null, S.clientes.map(c => {
+        const p = S.pagos.find(x => x.cliente_id === c.id);
+        return h('tr', { class: c.activo ? '' : 'off' },
+          h('td', { class: 'name' }, h('b', null, c.nombre), c.activo ? (c.notas ? h('small', null, c.notas) : null) : h('small', null, 'Inactivo')),
+          h('td', null, chip(c.categoria, CAT_ING)),
+          h('td', { class: 'num' }, money(c.valor)),
+          h('td', null, c.dia_pago ? 'Día ' + c.dia_pago : '—'),
+          h('td', null, p ? estadoChip(estado(p)) : h('span', { class: 'fin-muted' }, 'Sin cobro')),
+          h('td', { class: 'acts' }, rowActions('clientes', c, [['Registrar pago', () => openPago({ cliente_id: c.id })], ['Editar', () => openCliente(c)]])));
+      })))));
+  }
+
+  /* =====================================================================
+     HOJAS (formularios)
+     ===================================================================== */
+  let sheetEl = null;
+  function openSheet(title, sub, content, actions, color) {
+    closeSheet();
+    const p = PALETTES[color || 'azul'];
+    const card = h('div', { class: 'fin-sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': title, style: { '--c': p.ac, '--c-bg': p.bg, '--c-bd': p.bd } },
+      h('div', { class: 'fin-sheet-h' }, h('div', null, h('h2', null, title), sub ? h('p', { class: 'help' }, sub) : null),
+        h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Cerrar', onclick: closeSheet }, '✕')),
+      h('div', { class: 'fin-sheet-b' }, content),
+      h('div', { class: 'fin-sheet-f' }, actions));
+    sheetEl = h('div', { class: 'fin-overlay', onclick: e => { if (e.target === sheetEl) closeSheet(); } }, card);
+    document.body.append(sheetEl);
+    document.body.style.overflow = 'hidden';
+    const first = card.querySelector('input, select, textarea'); if (first) setTimeout(() => first.focus(), 40);
+  }
+  function closeSheet() { if (sheetEl) { sheetEl.remove(); sheetEl = null; document.body.style.overflow = ''; } }
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
+
+  const lbl = (text, id, el, opt) => h('div', null, h('label', { class: 'label', for: id }, text, opt ? h('span', { class: 'fin-muted' }, ' · opcional') : null), el);
+  function moneyInput(id, value, onInput) {
+    const inp = h('input', { type: 'text', inputmode: 'numeric', id, autocomplete: 'off', oninput: e => { const d = num(e.target.value); e.target.value = d ? fmtMoney(d) : ''; onInput(d); } });
+    inp.value = value ? fmtMoney(value) : '';
+    return h('div', { class: 'money small' }, h('span', null, '$'), inp, h('span', { style: { fontSize: '15px', fontWeight: 700 } }, 'COP'));
+  }
+  function catPicker(map, cur, on) {
+    return h('div', { class: 'fin-cats', role: 'radiogroup' }, Object.entries(map).map(([k, c]) => {
+      const p = PALETTES[c.color];
+      return h('button', { type: 'button', role: 'radio', 'aria-checked': cur === k ? 'true' : 'false', class: 'fin-cat', style: { '--c': p.ac, '--c-bg': p.bg, '--c-bd': p.bd }, onclick: e => { on(k); e.currentTarget.parentNode.querySelectorAll('.fin-cat').forEach(b => b.setAttribute('aria-checked', b === e.currentTarget ? 'true' : 'false')); } }, h('b', null, c.abbr), c.label);
+    }));
+  }
+  function busy(btn, label) { btn.disabled = true; btn.dataset.l = btn.textContent; btn.textContent = label; }
+  function unbusy(btn) { btn.disabled = false; btn.textContent = btn.dataset.l; }
+
+  /* ---------- Registrar pago ---------- */
+  function openPago(pre) {
+    pre = pre || {};
+    const f = { cliente_id: pre.cliente_id || '', nuevo: !S.clientes.length, nombre: '', categoria: 'mensual', valorCliente: 0, dia: '', mes: S.mes, valor: 0, abono: 0, fecha: todayISO(), concepto: '' };
+    const info = h('div', { class: 'fin-info' });
+    const errEl = h('div', { class: 'fin-err', role: 'alert' });
+    const content = h('div', { class: 'stack' });
+    const abonoBox = h('div');
+    let valorInputBox, abonoInputWrap;
+
+    const cobroExistente = () => S.pagos.find(p => p.cliente_id === f.cliente_id && p.mes === f.mes) || null;
+
+    function drawAbono() {
+      const ex = f.nuevo ? null : cobroExistente();
+      const total = ex ? Number(ex.valor) : f.valor;
+      const ya = ex ? pagado(ex) : 0;
+      const falta = Math.max(0, total - ya);
+      abonoBox.innerHTML = '';
+      const opts = ex ? [['falta', 'Lo que falta · ' + money(falta)], ['otro', 'Otro valor']] : [['50', '50% · ' + money(Math.round(total / 2))], ['100', '100% · ' + money(total)], ['otro', 'Otro valor'], ['0', 'Aún no paga']];
+      const setVal = k => { f.modo = k; f.abono = k === 'falta' ? falta : k === '50' ? Math.round(total / 2) : k === '100' ? total : k === '0' ? 0 : f.abono; drawAbonoInput(); updateInfo(); };
+      if (!f.modo || (ex && !['falta', 'otro'].includes(f.modo)) || (!ex && f.modo === 'falta')) f.modo = ex ? 'falta' : '100';
+      abonoBox.append(h('span', { class: 'label' }, '¿Cuánto pagó?'),
+        h('div', { class: 'fin-cats' }, opts.map(([k, l]) => h('button', { type: 'button', class: 'fin-cat', 'aria-checked': f.modo === k ? 'true' : 'false', onclick: e => { e.currentTarget.parentNode.querySelectorAll('.fin-cat').forEach(b => b.setAttribute('aria-checked', b === e.currentTarget ? 'true' : 'false')); setVal(k); } }, l))));
+      abonoInputWrap = h('div', { style: { marginTop: '10px' } });
+      abonoBox.append(abonoInputWrap);
+      setVal(f.modo);
+    }
+    function drawAbonoInput() {
+      abonoInputWrap.innerHTML = '';
+      if (f.modo === 'otro') abonoInputWrap.append(lbl('Valor pagado', 'p-abono', moneyInput('p-abono', f.abono, v => { f.abono = v; updateInfo(); })));
+    }
+    function updateInfo() {
+      const ex = f.nuevo ? null : cobroExistente();
+      const total = ex ? Number(ex.valor) : f.valor;
+      const nuevoPagado = (ex ? pagado(ex) : 0) + (Number(f.abono) || 0);
+      const e = nuevoPagado <= 0 ? 'pendiente' : nuevoPagado >= total ? 'pagado' : 'proceso';
+      info.innerHTML = '';
+      info.append(h('span', null, ex ? `Ya existe el cobro de ${monthLabel(f.mes)}: ${money(total)}, pagado ${avance(ex)}%. Este pago se suma como abono.` : `Nuevo cobro de ${monthLabel(f.mes)} por ${money(total)}.`),
+        h('span', { class: 'fin-info-st' }, 'Quedará: ', estadoChip(e), ' ', total ? Math.min(100, Math.round(nuevoPagado / total * 100)) + '%' : ''));
+    }
+    function drawCobroFields() {
+      valorInputBox.innerHTML = '';
+      const ex = f.nuevo ? null : cobroExistente();
+      if (!ex) {
+        valorInputBox.append(h('div', { class: 'grid2' },
+          lbl('Valor total del cobro', 'p-valor', moneyInput('p-valor', f.valor, v => { f.valor = v; drawAbono(); })),
+          lbl('Concepto', 'p-concepto', (() => { const i = h('input', { class: 'field', id: 'p-concepto', placeholder: 'Ej. Campaña de temporada', oninput: e => { f.concepto = e.target.value; } }); i.value = f.concepto; return i; })(), true)),
+          h('div', null, h('span', { class: 'label' }, 'Categoría'), catPicker(CAT_ING, f.categoria, k => { f.categoria = k; })));
+      }
+      drawAbono();
+    }
+    function onCliente(id) {
+      f.cliente_id = id; f.modo = null;
+      const c = S.clientes.find(x => x.id === id);
+      if (c) { f.valor = Number(c.valor) || 0; f.categoria = c.categoria; }
+      drawCobroFields();
+    }
+
+    const clienteSel = h('select', { class: 'select', id: 'p-cliente', onchange: e => onCliente(e.target.value) },
+      h('option', { value: '' }, 'Elige un cliente…'), S.clientes.filter(c => c.activo || c.id === f.cliente_id).map(c => h('option', { value: c.id, selected: c.id === f.cliente_id }, c.nombre + ' · ' + CAT_ING[c.categoria].abbr)));
+    const nuevoBox = h('div', { class: 'stack' });
+    function drawNuevo() {
+      nuevoBox.innerHTML = '';
+      if (!f.nuevo) { nuevoBox.append(lbl('Cliente', 'p-cliente', clienteSel), h('button', { type: 'button', class: 'add-line', onclick: () => { f.nuevo = true; f.cliente_id = ''; drawNuevo(); drawCobroFields(); } }, '+ Cliente nuevo')); return; }
+      const nom = h('input', { class: 'field big', id: 'p-nombre', placeholder: 'Nombre del cliente', oninput: e => { f.nombre = e.target.value; } }); nom.value = f.nombre;
+      const dia = h('input', { class: 'field', id: 'p-dia', type: 'number', min: 1, max: 31, placeholder: 'Ej. 15', oninput: e => { f.dia = e.target.value; } }); dia.value = f.dia;
+      nuevoBox.append(lbl('Cliente nuevo', 'p-nombre', nom),
+        h('div', { class: 'grid2' }, lbl('Valor que representa al mes o por servicio', 'p-vc', moneyInput('p-vc', f.valorCliente, v => { f.valorCliente = v; if (!f.valor || f.valor === f._lastVc) { f.valor = v; f._lastVc = v; drawCobroFields(); } })), lbl('Día de pago', 'p-dia', dia, true)),
+        S.clientes.length ? h('button', { type: 'button', class: 'add-line', onclick: () => { f.nuevo = false; drawNuevo(); drawCobroFields(); } }, 'Elegir un cliente existente') : null);
+    }
+    const mesIn = h('input', { type: 'month', class: 'field', id: 'p-mes', value: f.mes.slice(0, 7), onchange: async e => { if (!e.target.value) return; f.mes = e.target.value + '-01'; if (f.mes !== S.mes) { S.mes = f.mes; await load(); render(); } f.modo = null; drawCobroFields(); } });
+    const fechaIn = h('input', { type: 'date', class: 'field', id: 'p-fecha', value: f.fecha, onchange: e => { f.fecha = e.target.value; } });
+    valorInputBox = h('div', { class: 'stack' });
+    content.append(nuevoBox, h('div', { class: 'grid2' }, lbl('Mes del cobro', 'p-mes', mesIn), lbl('Fecha del pago', 'p-fecha', fechaIn)), valorInputBox, abonoBox, info, errEl);
+    drawNuevo();
+    if (f.cliente_id) onCliente(f.cliente_id); else drawCobroFields();
+
+    const save = h('button', { type: 'button', class: 'btn primary huge', onclick: async () => {
+      errEl.textContent = '';
+      try {
+        let clienteId = f.cliente_id;
+        if (f.nuevo) {
+          if (!f.nombre.trim()) { errEl.textContent = 'Escribe el nombre del cliente.'; return; }
+          busy(save, 'Guardando…');
+          const c = await store.insert('clientes', { nombre: f.nombre.trim(), categoria: f.categoria, valor: f.valorCliente || f.valor || 0, dia_pago: f.dia ? Number(f.dia) : null, activo: true });
+          clienteId = c.id;
+        } else if (!clienteId) { errEl.textContent = 'Elige el cliente.'; return; }
+        const ex = f.nuevo ? null : cobroExistente();
+        const abono = Number(f.abono) || 0;
+        if (ex && abono <= 0) { errEl.textContent = 'Escribe cuánto pagó.'; if (save.disabled) unbusy(save); return; }
+        if (!ex && !f.valor) { errEl.textContent = 'Escribe el valor total del cobro.'; if (save.disabled) unbusy(save); return; }
+        if (!save.disabled) busy(save, 'Guardando…');
+        const ab = abono > 0 ? [{ fecha: f.fecha || todayISO(), valor: abono }] : [];
+        if (ex) await store.update('pagos', ex.id, { abonos: (ex.abonos || []).concat(ab) });
+        else await store.insert('pagos', { cliente_id: clienteId, mes: f.mes, categoria: f.categoria, valor: f.valor, concepto: f.concepto.trim() || null, abonos: ab });
+        closeSheet(); toast(abono > 0 ? 'Pago registrado' : 'Cobro creado como pendiente'); await refresh();
+      } catch (e) { console.error(e); errEl.textContent = 'No se pudo guardar. Revisa tu conexión e intenta de nuevo.'; unbusy(save); }
+    } }, 'Guardar pago');
+    openSheet('Registrar pago', 'Un cliente pagó todo o una parte. Si ya tiene cobro este mes, se suma como abono.', content, [h('button', { type: 'button', class: 'btn', onclick: closeSheet }, 'Cancelar'), save], 'azul');
+  }
+
+  /* ---------- Editar cobro (valor, categoría, abonos) ---------- */
+  function openCobro(p) {
+    const f = { valor: Number(p.valor), categoria: p.categoria, concepto: p.concepto || '', abonos: (p.abonos || []).map(a => Object.assign({}, a)) };
+    const list = h('div', { class: 'stack', style: { gap: '8px' } });
+    const drawList = () => {
+      list.innerHTML = '';
+      if (!f.abonos.length) list.append(h('p', { class: 'help' }, 'Sin abonos: el cobro queda pendiente.'));
+      f.abonos.forEach((a, i) => {
+        const d = h('input', { type: 'date', class: 'field', value: a.fecha || '', 'aria-label': 'Fecha del abono', onchange: e => { a.fecha = e.target.value; } });
+        list.append(h('div', { class: 'fin-abono' }, d, moneyInput('ab-' + i, a.valor, v => { a.valor = v; }), h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Quitar abono', onclick: () => { f.abonos.splice(i, 1); drawList(); } }, '✕')));
+      });
+    };
+    drawList();
+    const con = h('input', { class: 'field', id: 'c-concepto', oninput: e => { f.concepto = e.target.value; } }); con.value = f.concepto;
+    const content = h('div', { class: 'stack' },
+      h('div', { class: 'grid2' }, lbl('Valor total', 'c-valor', moneyInput('c-valor', f.valor, v => { f.valor = v; })), lbl('Concepto', 'c-concepto', con, true)),
+      h('div', null, h('span', { class: 'label' }, 'Categoría'), catPicker(CAT_ING, f.categoria, k => { f.categoria = k; })),
+      h('div', null, h('span', { class: 'label' }, 'Abonos'), list, h('button', { type: 'button', class: 'add-line', style: { marginTop: '8px' }, onclick: () => { f.abonos.push({ fecha: todayISO(), valor: 0 }); drawList(); } }, '+ Agregar abono')));
+    const save = h('button', { type: 'button', class: 'btn primary huge', onclick: async () => {
+      busy(save, 'Guardando…');
+      try { await store.update('pagos', p.id, { valor: f.valor, categoria: f.categoria, concepto: f.concepto.trim() || null, abonos: f.abonos.filter(a => Number(a.valor) > 0) }); closeSheet(); toast('Cobro actualizado'); await refresh(); }
+      catch (e) { console.error(e); toast('No se pudo guardar'); unbusy(save); }
+    } }, 'Guardar cambios');
+    openSheet('Editar cobro · ' + clienteDe(p).nombre, monthLabel(p.mes), content, [h('button', { type: 'button', class: 'btn', onclick: closeSheet }, 'Cancelar'), save], CAT_ING[p.categoria].color);
+  }
+
+  /* ---------- Registrar / editar gasto ---------- */
+  function openGasto(g) {
+    const edit = !!(g && g.id);
+    const f = Object.assign({ concepto: '', categoria: 'hormiga', movimiento: 'salida', fecha: todayISO(), valor: 0, notas: '' }, g || {});
+    if (!edit) { const t = todayISO(); f.fecha = monthOf(t) === S.mes ? t : S.mes; }
+    f.mes = f.mes || monthOf(f.fecha);
+    const errEl = h('div', { class: 'fin-err', role: 'alert' });
+    const movBox = h('div');
+    const drawMov = () => {
+      movBox.innerHTML = '';
+      if (f.categoria !== 'prestamo') { f.movimiento = 'salida'; return; }
+      movBox.append(h('span', { class: 'label' }, 'Dirección del préstamo'),
+        segment([['salida', 'Sale de Brandgo'], ['entrada', 'Entra a Brandgo']], f.movimiento, v => { f.movimiento = v; drawMov(); }));
+    };
+    const con = h('input', { class: 'field big', id: 'g-concepto', placeholder: 'Ej. Compra de insumos Froyo', oninput: e => { f.concepto = e.target.value; } }); con.value = f.concepto;
+    const fecha = h('input', { type: 'date', class: 'field', id: 'g-fecha', value: f.fecha, onchange: e => { f.fecha = e.target.value; if (e.target.value) { f.mes = monthOf(e.target.value); mes.value = f.mes.slice(0, 7); } } });
+    const mes = h('input', { type: 'month', class: 'field', id: 'g-mes', value: f.mes.slice(0, 7), onchange: e => { if (e.target.value) f.mes = e.target.value + '-01'; } });
+    const notas = h('input', { class: 'field', id: 'g-notas', oninput: e => { f.notas = e.target.value; } }); notas.value = f.notas || '';
+    const content = h('div', { class: 'stack' },
+      lbl('¿En qué se gastó?', 'g-concepto', con),
+      h('div', null, h('span', { class: 'label' }, 'Categoría'), catPicker(CAT_GAS, f.categoria, k => { f.categoria = k; drawMov(); })),
+      movBox,
+      h('div', { class: 'grid2' }, lbl('Valor', 'g-valor', moneyInput('g-valor', f.valor, v => { f.valor = v; })), lbl('Fecha', 'g-fecha', fecha)),
+      h('div', { class: 'grid2' }, lbl('Mes al que se carga', 'g-mes', mes), lbl('Nota', 'g-notas', notas, true)),
+      errEl);
+    drawMov();
+    const save = h('button', { type: 'button', class: 'btn primary huge', onclick: async () => {
+      errEl.textContent = '';
+      if (!f.concepto.trim()) { errEl.textContent = 'Escribe en qué se gastó.'; return; }
+      if (!f.valor) { errEl.textContent = 'Escribe el valor.'; return; }
+      if (!f.fecha) { errEl.textContent = 'Elige la fecha.'; return; }
+      busy(save, 'Guardando…');
+      const row = { concepto: f.concepto.trim(), categoria: f.categoria, movimiento: f.movimiento, fecha: f.fecha, mes: f.mes, valor: f.valor, notas: (f.notas || '').trim() || null };
+      try {
+        if (edit) await store.update('gastos', g.id, row); else await store.insert('gastos', row);
+        closeSheet(); toast(edit ? 'Gasto actualizado' : 'Gasto registrado');
+        if (f.mes !== S.mes) S.mes = f.mes;
+        await refresh();
+      } catch (e) { console.error(e); errEl.textContent = 'No se pudo guardar. Revisa tu conexión e intenta de nuevo.'; unbusy(save); }
+    } }, edit ? 'Guardar cambios' : 'Guardar gasto');
+    openSheet(edit ? 'Editar gasto' : 'Registrar gasto', edit ? null : 'Concepto, categoría, valor y fecha. El mes se toma de la fecha.', content, [h('button', { type: 'button', class: 'btn', onclick: closeSheet }, 'Cancelar'), save], 'naranja');
+  }
+
+  /* ---------- Cliente ---------- */
+  function openCliente(c) {
+    const edit = !!c;
+    const f = Object.assign({ nombre: '', categoria: 'mensual', valor: 0, dia_pago: '', activo: true, notas: '' }, c || {});
+    const errEl = h('div', { class: 'fin-err', role: 'alert' });
+    const nom = h('input', { class: 'field big', id: 'cl-nombre', placeholder: 'Nombre del cliente', oninput: e => { f.nombre = e.target.value; } }); nom.value = f.nombre;
+    const dia = h('input', { class: 'field', id: 'cl-dia', type: 'number', min: 1, max: 31, placeholder: 'Ej. 15', oninput: e => { f.dia_pago = e.target.value; } }); dia.value = f.dia_pago || '';
+    const notas = h('input', { class: 'field', id: 'cl-notas', placeholder: 'Ej. Paga 50% al inicio y 50% a los 15 días', oninput: e => { f.notas = e.target.value; } }); notas.value = f.notas || '';
+    const content = h('div', { class: 'stack' },
+      lbl('Nombre', 'cl-nombre', nom),
+      h('div', null, h('span', { class: 'label' }, 'Tipo de cliente'), catPicker(CAT_ING, f.categoria, k => { f.categoria = k; })),
+      h('div', { class: 'grid2' }, lbl('Valor que representa', 'cl-valor', moneyInput('cl-valor', f.valor, v => { f.valor = v; })), lbl('Día de pago', 'cl-dia', dia, true)),
+      lbl('Nota', 'cl-notas', notas, true),
+      h('label', { class: 'switch' }, h('input', { type: 'checkbox', checked: f.activo, onchange: e => { f.activo = e.target.checked; } }), 'Cliente activo'),
+      errEl);
+    const save = h('button', { type: 'button', class: 'btn primary huge', onclick: async () => {
+      if (!f.nombre.trim()) { errEl.textContent = 'Escribe el nombre del cliente.'; return; }
+      busy(save, 'Guardando…');
+      const row = { nombre: f.nombre.trim(), categoria: f.categoria, valor: f.valor || 0, dia_pago: f.dia_pago ? Number(f.dia_pago) : null, activo: f.activo, notas: (f.notas || '').trim() || null };
+      try { if (edit) await store.update('clientes', c.id, row); else await store.insert('clientes', row); closeSheet(); toast(edit ? 'Cliente actualizado' : 'Cliente creado'); await refresh(); }
+      catch (e) { console.error(e); errEl.textContent = 'No se pudo guardar.'; unbusy(save); }
+    } }, edit ? 'Guardar cambios' : 'Crear cliente');
+    openSheet(edit ? 'Editar cliente' : 'Nuevo cliente', 'El perfil del cliente: categoría, valor y día en que suele pagar.', content, [h('button', { type: 'button', class: 'btn', onclick: closeSheet }, 'Cancelar'), save], 'violeta');
+  }
+
+  /* =====================================================================
+     EXPORTAR RESUMEN EN PDF (carta)
+     ===================================================================== */
+  const PAGE = { w: 816, h: 1056 };
+  function reportBlocks() {
+    const t = totals(S.pagos, S.gastos);
+    const ml = monthLabel(S.mes);
+    const out = [];
+    const sign = v => (v < 0 ? '−' : '') + money(Math.abs(v));
+    out.push(h('div', null,
+      h('div', { class: 'd-head' }, h('div', { class: 'd-brand' }, h('img', { src: A.logo, alt: '' }), h('span', null, 'BRANDGO')),
+        h('div', { class: 'd-num' }, h('span', { class: 'pill' }, 'Confidencial'), h('small', null, 'Generado el ' + dateShort(todayISO())))),
+      h('h1', { class: 'd-title', style: { marginTop: '22px' } }, 'Resumen financiero'),
+      h('div', { class: 'd-concept', style: { marginTop: '8px', color: '#6e6e73' } }, ml)));
+    out.push(h('div', { class: 'd-sum' }, h('div', { class: 'lb' }, 'Saldo neto del mes'),
+      h('div', { class: 'amt' }, h('b', { style: { color: t.saldo < 0 ? '#d92d4a' : '#1d1d1f' } }, sign(t.saldo)), h('span', null, 'COP')),
+      h('div', { class: 'words' }, `Facturado ${money(t.facturado)} − nómina ${money(t.nomina)} − gastos en recursos ${money(t.gastos)}. Caja con lo recibido: ${sign(t.caja)}.`)));
+    out.push(h('div', { class: 'r-kpis' }, [['Facturado', t.facturado], ['Recibido', t.recibido], ['Por cobrar', t.porCobrar], ['Nómina', t.nomina], ['Gastos', t.gastos]].map(([k, v]) => h('div', { class: 'd-card' }, h('div', { class: 'lb' }, k), h('div', { class: 'nm' }, money(v))))));
+    const table = (title, cols, rows, foot, color) => {
+      const p = PALETTES[color];
+      return h('div', { class: 'r-block', style: { '--ac': p.ac, '--bg': p.bg, '--bd': p.bd, '--ln': p.ln } },
+        h('div', { class: 'r-title' }, h('span', null, title), h('b', null, foot)),
+        h('table', { class: 'r-table' }, h('thead', null, h('tr', null, cols.map((c, i) => h('th', { class: i >= cols.length - 1 || c.num ? 'num' : '' }, c.label || c)))),
+          h('tbody', null, rows.map(r => h('tr', null, r.map((v, i) => h('td', { class: cols[i].num ? 'num' : '' }, v)))))));
+    };
+    const pagos = S.pagos.slice().sort((a, b) => clienteDe(a).nombre.localeCompare(clienteDe(b).nombre));
+    if (pagos.length) out.push(table('Ingresos de clientes', ['Cliente', 'Categoría', 'Avance', 'Estado', { label: 'Recibido', num: true }, { label: 'Valor', num: true }],
+      pagos.map(p => [clienteDe(p).nombre, CAT_ING[p.categoria].label, avance(p) + '%', ESTADOS[estado(p)].label, money(pagado(p)), money(p.valor)]), money(t.facturado), 'azul'));
+    const rec = S.gastos.filter(g => g.categoria !== 'nomina' && g.categoria !== 'extra');
+    if (rec.length) out.push(table('Gastos en recursos', ['Concepto', 'Categoría', 'Fecha', { label: 'Valor', num: true }],
+      rec.map(g => [g.concepto + (g.movimiento === 'entrada' ? ' (entra)' : ''), CAT_GAS[g.categoria].label, dateShort(g.fecha), (g.movimiento === 'entrada' ? '+' : '') + money(g.valor)]), money(t.gastos), 'naranja'));
+    const nom = S.gastos.filter(g => g.categoria === 'nomina' || g.categoria === 'extra');
+    if (nom.length) out.push(table('Nómina', ['Persona', 'Categoría', { label: 'Valor', num: true }],
+      nom.map(g => [g.concepto, CAT_GAS[g.categoria].label, money(g.valor)]), money(t.nomina), 'verde'));
+    return out;
+  }
+  function newPage(n) {
+    const page = h('div', { class: 'page', style: { width: PAGE.w + 'px', height: PAGE.h + 'px' } });
+    const inner = h('div', { class: 'page-in', style: { gap: '14px' } });
+    const ct = h('div', { class: 'ct' }, 'Documento confidencial · uso interno');
+    page.append(inner, h('div', { class: 'pfoot' }, h('div', { class: 'mk', html: 'BRANDGO<sup>™</sup>' }), ct, h('div', { class: 'sl' }, 'Creatividad Sin Permiso')));
+    $('#stage').append(page);
+    return { page, inner, ct, n };
+  }
+  function paginate() {
+    $('#stage').innerHTML = '';
+    const pages = [newPage(1)];
+    for (const b of reportBlocks()) {
+      let cur = pages[pages.length - 1];
+      cur.inner.append(b);
+      if (cur.inner.scrollHeight > cur.inner.clientHeight + 1 && cur.inner.children.length > 1) {
+        b.remove();
+        // Una tabla larga se parte por filas
+        if (b.classList.contains('r-block')) {
+          const rows = [...b.querySelectorAll('tbody tr')];
+          const head = b.cloneNode(true); head.querySelector('tbody').innerHTML = '';
+          cur.inner.append(head);
+          let moved = 0;
+          while (rows.length && cur.inner.scrollHeight <= cur.inner.clientHeight + 1) { head.querySelector('tbody').append(rows.shift()); moved++; }
+          if (cur.inner.scrollHeight > cur.inner.clientHeight + 1 && moved) { rows.unshift(head.querySelector('tbody').lastChild); head.querySelector('tbody').lastChild.remove(); moved--; }
+          if (!moved) head.remove();
+          cur = newPage(pages.length + 1); pages.push(cur);
+          const rest = b.cloneNode(true); rest.querySelector('tbody').innerHTML = ''; rows.forEach(r => rest.querySelector('tbody').append(r));
+          if (moved) rest.querySelector('.r-title span').textContent += ' (continúa)';
+          cur.inner.append(rest);
+        } else { cur = newPage(pages.length + 1); pages.push(cur); cur.inner.append(b); }
+      }
+    }
+    if (pages.length > 1) pages.forEach(p => { p.ct.textContent += ' · Página ' + p.n + ' de ' + pages.length; });
+    return pages.map(p => p.page);
+  }
+
+  async function exportResumen(btn) {
+    if (!window.html2canvas || !window.jspdf) { toast('No se pudieron cargar las librerías del PDF'); return; }
+    busy(btn, 'Generando…');
+    const stage = $('#stage');
+    try {
+      if (document.fonts && document.fonts.ready) await document.fonts.ready;
+      const pages = paginate();
+      stage.style.left = '0px'; stage.style.zIndex = '-1';
+      const pdf = new window.jspdf.jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter', compress: true });
+      const W = pdf.internal.pageSize.getWidth(), H = pdf.internal.pageSize.getHeight();
+      for (let i = 0; i < pages.length; i++) {
+        stage.innerHTML = ''; stage.append(pages[i]);
+        await new Promise(r => setTimeout(r, 40));
+        const canvas = await window.html2canvas(pages[i], { scale: 2.5, backgroundColor: '#ffffff', logging: false, width: PAGE.w, height: PAGE.h, windowWidth: PAGE.w, windowHeight: PAGE.h, scrollX: 0, scrollY: -window.scrollY });
+        if (i > 0) pdf.addPage('letter', 'portrait');
+        pdf.addImage(canvas.toDataURL('image/jpeg', 0.93), 'JPEG', 0, 0, W, H, undefined, 'FAST');
+      }
+      pdf.setProperties({ title: 'Resumen financiero ' + monthLabel(S.mes), author: 'Brandgo', creator: 'Brandgo Finanzas' });
+      const ok = await window.BG.deliver(pdf, `Resumen financiero Brandgo - ${monthLabel(S.mes)}.pdf`);
+      if (ok) toast('PDF descargado');
+    } catch (e) { console.error(e); toast('No se pudo generar el PDF'); }
+    finally { stage.innerHTML = ''; stage.style.left = ''; stage.style.zIndex = ''; unbusy(btn); }
+  }
+
+  /* ---------------- Inicio ---------------- */
+  $('#brandLogo').src = A.logo;
+  (async () => {
+    if (!store) return screenSetup();
+    try { const s = await store.session(); if (s) await enter(s); else screenLogin(); }
+    catch (e) { console.error(e); screenLogin(); }
+  })();
+})();
