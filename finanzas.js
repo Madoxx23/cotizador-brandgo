@@ -63,6 +63,11 @@
       async clientes() { return ok(await sb.from('clientes').select('*').order('nombre')); },
       async pagos(mes) { return ok(await sb.from('pagos').select('*').eq('mes', mes).order('created_at')); },
       async gastos(mes) { return ok(await sb.from('gastos').select('*').eq('mes', mes).order('fecha')); },
+      async allPagos() { return ok(await sb.from('pagos').select('mes,valor,abonos')); },
+      async allGastos() { return ok(await sb.from('gastos').select('mes,valor,categoria,movimiento')); },
+      async metas() { return ok(await sb.from('metas').select('mes,meta')); },
+      async setMeta(mes, meta) { return ok(await sb.from('metas').upsert({ mes, meta }, { onConflict: 'mes' }).select().single()); },
+      async delMeta(mes) { ok(await sb.from('metas').delete().eq('mes', mes)); },
       async insert(t, row) { return ok(await sb.from(t).insert(row).select().single()); },
       async insertMany(t, rows) { return ok(await sb.from(t).insert(rows).select()); },
       async update(t, id, patch) { return ok(await sb.from(t).update(patch).eq('id', id).select().single()); },
@@ -71,8 +76,8 @@
   }
 
   function demoStore() {
-    let db = { clientes: [], pagos: [], gastos: [] }; let session = null;
-    const ready = fetch('/__scratch/demo-data.json').then(r => r.ok ? r.json() : db).then(d => { db = d; }).catch(() => {});
+    let db = { clientes: [], pagos: [], gastos: [], metas: [] }; let session = null;
+    const ready = fetch('/__scratch/demo-data.json').then(r => r.ok ? r.json() : db).then(d => { db = Object.assign({ metas: [] }, d); }).catch(() => {});
     const id = () => 'd' + Math.random().toString(36).slice(2, 10);
     return {
       async session() { await ready; return session; },
@@ -82,6 +87,11 @@
       async clientes() { return db.clientes.slice().sort((a, b) => a.nombre.localeCompare(b.nombre)); },
       async pagos(mes) { return db.pagos.filter(p => p.mes === mes); },
       async gastos(mes) { return db.gastos.filter(g => g.mes === mes).sort((a, b) => a.fecha.localeCompare(b.fecha)); },
+      async allPagos() { return db.pagos; },
+      async allGastos() { return db.gastos; },
+      async metas() { return db.metas; },
+      async setMeta(mes, meta) { const r = db.metas.find(m => m.mes === mes); if (r) r.meta = meta; else db.metas.push({ mes, meta }); return { mes, meta }; },
+      async delMeta(mes) { db.metas = db.metas.filter(m => m.mes !== mes); },
       async insert(t, row) { const r = Object.assign({ id: id(), created_at: new Date().toISOString() }, row); db[t].push(r); return r; },
       async insertMany(t, rows) { return Promise.all(rows.map(r => this.insert(t, r))); },
       async update(t, rid, patch) { const r = db[t].find(x => x.id === rid); Object.assign(r, patch); return r; },
@@ -93,14 +103,15 @@
   const store = isDemo ? demoStore() : (configured ? supabaseStore() : null);
 
   /* ---------------- Estado de la vista ---------------- */
-  const S = { user: null, mes: monthOf(todayISO()), tab: 'resumen', clientes: [], pagos: [], gastos: [], prev: null, filtroEstado: 'todos', filtroCat: 'todas', buscar: '' };
-  try { const t = sessionStorage.getItem('fin-tab'); if (t) S.tab = t; } catch (e) { /* sin almacenamiento */ }
+  const S = { user: null, mes: monthOf(todayISO()), tab: 'meses', clientes: [], pagos: [], gastos: [], prev: null, all: { pagos: [], gastos: [] }, metas: [], metasMissing: false, filtroEstado: 'todos', filtroCat: 'todas', buscar: '' };
 
   async function load() {
     const prevMes = addMonths(S.mes, -1);
-    const [clientes, pagos, gastos, pp, pg] = await Promise.all([store.clientes(), store.pagos(S.mes), store.gastos(S.mes), store.pagos(prevMes), store.gastos(prevMes)]);
-    Object.assign(S, { clientes, pagos, gastos, prev: { pagos: pp, gastos: pg } });
+    const metasP = store.metas().then(m => { S.metasMissing = false; return m; }).catch(() => { S.metasMissing = true; return []; });
+    const [clientes, pagos, gastos, pp, pg, ap, ag, metas] = await Promise.all([store.clientes(), store.pagos(S.mes), store.gastos(S.mes), store.pagos(prevMes), store.gastos(prevMes), store.allPagos(), store.allGastos(), metasP]);
+    Object.assign(S, { clientes, pagos, gastos, prev: { pagos: pp, gastos: pg }, all: { pagos: ap, gastos: ag }, metas });
   }
+  const metaDe = mes => { const m = S.metas.find(x => x.mes === mes); return m ? Number(m.meta) : 0; };
   const clienteDe = p => S.clientes.find(c => c.id === p.cliente_id) || { nombre: 'Cliente eliminado', categoria: p.categoria };
 
   function totals(pagos, gastos) {
@@ -191,15 +202,17 @@
   /* =====================================================================
      ESTRUCTURA PRINCIPAL
      ===================================================================== */
-  const TABS = [['resumen', 'RS', 'Resumen'], ['pagos', 'PG', 'Pagos'], ['gastos', 'GS', 'Gastos'], ['clientes', 'CL', 'Clientes']];
+  const TABS = [['meses', 'ME', 'Meses'], ['resumen', 'RS', 'Resumen'], ['pagos', 'PG', 'Pagos'], ['gastos', 'GS', 'Gastos'], ['clientes', 'CL', 'Clientes']];
+  const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   async function refresh() {
     try { await load(); } catch (e) { console.error(e); toast('No se pudieron cargar los datos'); }
     render();
   }
 
-  function render() {
+  function render(anim) {
     if (!S.user) return;
+    S.anim = anim !== false && !reduceMotion;
     app.innerHTML = '';
     const monthInput = h('input', { type: 'month', class: 'field', id: 'fin-mes', value: S.mes.slice(0, 7), 'aria-label': 'Mes', onchange: e => { if (e.target.value) { S.mes = e.target.value + '-01'; refresh(); } } });
     app.append(
@@ -209,21 +222,138 @@
           h('button', { type: 'button', class: 'fin-qa pay', onclick: () => openPago() }, h('b', null, 'PG'), h('span', null, h('strong', null, 'Registrar pago'), h('small', null, 'Un cliente pagó'))),
           h('button', { type: 'button', class: 'fin-qa exp', onclick: () => openGasto() }, h('b', null, 'GS'), h('span', null, h('strong', null, 'Registrar gasto'), h('small', null, 'Salió dinero'))))),
       h('div', { class: 'fin-bar' },
-        h('nav', { class: 'fin-tabs', 'aria-label': 'Secciones' }, TABS.map(([k, ab, lb]) => h('button', { type: 'button', class: S.tab === k ? 'on' : '', 'aria-current': S.tab === k ? 'page' : null, onclick: () => { S.tab = k; try { sessionStorage.setItem('fin-tab', k); } catch (e) { /* noop */ } render(); } }, h('b', null, ab), lb))),
+        h('nav', { class: 'fin-tabs', 'aria-label': 'Secciones' }, TABS.map(([k, ab, lb]) => h('button', { type: 'button', class: S.tab === k ? 'on' : '', 'aria-current': S.tab === k ? 'page' : null, onclick: () => { S.tab = k; render(); } }, h('b', null, ab), lb))),
         h('div', { class: 'fin-month' },
           h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Mes anterior', onclick: () => { S.mes = addMonths(S.mes, -1); refresh(); } }, '‹'),
           monthInput,
           h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Mes siguiente', onclick: () => { S.mes = addMonths(S.mes, 1); refresh(); } }, '›'))));
-    const body = h('div', { class: 'fin-body' });
+    const body = h('div', { class: 'fin-body' + (S.anim ? ' animate' : '') });
     app.append(body);
-    ({ resumen: viewResumen, pagos: viewPagos, gastos: viewGastos, clientes: viewClientes })[S.tab](body);
+    (({ meses: viewMeses, resumen: viewResumen, pagos: viewPagos, gastos: viewGastos, clientes: viewClientes })[S.tab] || viewMeses)(body);
+    // Escalonar la entrada de cada bloque y animar cifras y medidores
+    let i = 0;
+    body.querySelectorAll('.fin-rise').forEach(el => el.style.setProperty('--i', i++));
+    body.querySelectorAll('[data-count]').forEach(el => countUp(el, Number(el.dataset.count), el.dataset.prefix || ''));
+    requestAnimationFrame(() => requestAnimationFrame(() => body.querySelectorAll('[data-to]').forEach(el => { el.style[el.dataset.prop || 'width'] = el.dataset.to; })));
   }
+
+  /* ---------------- Animaciones ---------------- */
+  function countUp(el, value, prefix) {
+    const fmt = v => prefix + (v < 0 ? '−' : '') + money(Math.abs(Math.round(v)));
+    if (!S.anim) { el.textContent = fmt(value); return; }
+    const t0 = performance.now(), dur = 1100;
+    const ease = t => 1 - Math.pow(1 - t, 4);
+    const step = now => { const t = Math.min(1, (now - t0) / dur); el.textContent = fmt(value * ease(t)); if (t < 1) requestAnimationFrame(step); };
+    el.textContent = fmt(0);
+    requestAnimationFrame(step);
+  }
+  // Cifra que se anima al aparecer (queda con su valor final si no hay animación)
+  const counted = (value, cls) => h('b', { class: cls || null, 'data-count': value }, (value < 0 ? '−' : '') + money(Math.abs(value)));
+  // Anillo de progreso hacia la meta
+  function ring(pct, size, color) {
+    const r = size / 2 - 5, c = 2 * Math.PI * r, p = Math.max(0, Math.min(1, pct / 100));
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg'); svg.setAttribute('viewBox', `0 0 ${size} ${size}`); svg.setAttribute('width', size); svg.setAttribute('height', size); svg.setAttribute('class', 'fin-ring'); svg.setAttribute('aria-hidden', 'true');
+    const mk = (cls, extra) => { const e = document.createElementNS(ns, 'circle'); e.setAttribute('cx', size / 2); e.setAttribute('cy', size / 2); e.setAttribute('r', r); e.setAttribute('class', cls); Object.entries(extra || {}).forEach(([k, v]) => e.setAttribute(k, v)); return e; };
+    svg.append(mk('bg'));
+    const fg = mk('fg', { 'stroke-dasharray': c, 'stroke-dashoffset': S.anim ? c : c * (1 - p), transform: `rotate(-90 ${size / 2} ${size / 2})` });
+    if (color) fg.style.stroke = color;
+    fg.dataset.to = c * (1 - p); fg.dataset.prop = 'strokeDashoffset';
+    svg.append(fg);
+    return svg;
+  }
+  // Barra que crece hasta su ancho
+  const growBar = (pct, cls) => h('i', { class: cls || null, 'data-to': Math.max(0, Math.min(100, pct)) + '%', style: { width: S.anim ? '0%' : Math.max(0, Math.min(100, pct)) + '%' } });
 
   /* ---------------- Tooltip de gráficas ---------------- */
   const tip = $('#tip');
   function bindTip(el, text) {
     el.addEventListener('pointermove', e => { tip.hidden = false; tip.textContent = text; tip.style.left = Math.min(window.innerWidth - tip.offsetWidth - 8, e.clientX + 14) + 'px'; tip.style.top = (e.clientY + 14) + 'px'; });
     el.addEventListener('pointerleave', () => { tip.hidden = true; });
+  }
+
+  /* =====================================================================
+     MESES (catálogo de balances con metas)
+     ===================================================================== */
+  function balances() {
+    const by = {};
+    const get = mes => by[mes] || (by[mes] = { mes, facturado: 0, nomina: 0, otros: 0, cobros: 0 });
+    S.all.pagos.forEach(p => { const b = get(p.mes); b.facturado += Number(p.valor) || 0; b.cobros++; });
+    S.all.gastos.forEach(g => {
+      if (g.movimiento === 'entrada') return;
+      const b = get(g.mes);
+      if (g.categoria === 'nomina' || g.categoria === 'extra') b.nomina += Number(g.valor) || 0; else b.otros += Number(g.valor) || 0;
+    });
+    S.metas.forEach(m => get(m.mes));
+    get(monthOf(todayISO()));
+    return Object.values(by).map(b => Object.assign(b, { neto: b.facturado - b.nomina - b.otros, meta: metaDe(b.mes) })).sort((a, b) => b.mes.localeCompare(a.mes));
+  }
+
+  function metaMeter(b, size) {
+    const pct = b.meta ? Math.round(b.facturado / b.meta * 100) : 0;
+    const done = b.meta && b.facturado >= b.meta;
+    return h('div', { class: 'fin-meter' + (done ? ' done' : '') },
+      h('div', { class: 'fin-ring-wrap', style: { width: size + 'px', height: size + 'px' } }, ring(pct, size), h('span', null, pct + '%')),
+      h('div', { class: 'fin-meter-t' },
+        h('span', null, 'Meta de facturación'),
+        h('b', null, money(b.meta)),
+        h('small', null, done ? `Cumplida · ${money(b.facturado - b.meta)} por encima` : `Faltan ${money(b.meta - b.facturado)}`)));
+  }
+
+  function viewMeses(body) {
+    const list = balances();
+    const actual = monthOf(todayISO());
+    body.append(h('div', { class: 'fin-sum-head fin-rise' },
+      h('div', null, h('h2', { class: 'fin-h2' }, 'Balance por mes'), h('p', { class: 'help' }, 'Neto = facturado − nómina − otros gastos. Toca un mes para ver el detalle.')),
+      h('button', { type: 'button', class: 'btn primary', onclick: () => openMeta(null) }, '+ Nuevo mes con meta')));
+    if (S.metasMissing) body.append(h('div', { class: 'block fin-rise fin-notice' }, h('h3', null, 'Falta activar las metas'),
+      h('p', { class: 'help' }, 'Corre el archivo supabase/metas.sql en Supabase → SQL Editor para poder guardar metas de facturación. El resto funciona normal.')));
+    const years = [...new Set(list.map(b => b.mes.slice(0, 4)))];
+    years.forEach(y => {
+      const ms = list.filter(b => b.mes.startsWith(y));
+      const yf = ms.reduce((s, b) => s + b.facturado, 0), yn = ms.reduce((s, b) => s + b.neto, 0);
+      body.append(h('div', { class: 'fin-year fin-rise' }, h('h3', null, y), h('span', null, 'Facturado ', h('b', null, money(yf)), ' · Neto ', h('b', { class: yn < 0 ? 'neg' : '' }, (yn < 0 ? '−' : '') + money(Math.abs(yn))))));
+      body.append(h('div', { class: 'fin-months' }, ms.map(b => {
+        const empty = !b.facturado && !b.nomina && !b.otros;
+        const card = h('article', {
+          class: 'fin-mcard fin-rise' + (b.mes === actual ? ' current' : '') + (b.mes === S.mes ? ' selected' : ''), tabindex: 0, role: 'button', 'aria-label': 'Ver ' + monthLabel(b.mes),
+          onclick: e => { if (e.target.closest('button')) return; S.mes = b.mes; S.tab = 'resumen'; refresh(); },
+          onkeydown: e => { if (e.key === 'Enter' && e.target === card) card.click(); }
+        },
+          h('div', { class: 'fin-mcard-h' },
+            h('div', null, h('h3', null, monthLabel(b.mes).split(' ')[0]), h('small', null, b.mes === actual ? 'Mes en curso' : (b.cobros ? b.cobros + (b.cobros === 1 ? ' cobro' : ' cobros') : 'Sin cobros'))),
+            h('button', { type: 'button', class: 'btn small', onclick: () => openMeta(b.mes) }, b.meta ? 'Editar meta' : '+ Meta')),
+          h('div', { class: 'fin-mcard-k' }, h('span', null, 'Facturado'), counted(b.facturado)),
+          h('div', { class: 'fin-mcard-rows' },
+            h('div', null, h('span', null, 'Nómina'), h('b', null, money(b.nomina))),
+            h('div', null, h('span', null, 'Otros gastos'), h('b', null, money(b.otros))),
+            h('div', { class: 'net ' + (b.neto < 0 ? 'neg' : b.neto > 0 ? 'pos' : 'zero') }, h('span', null, 'Neto'), counted(b.neto))),
+          b.meta ? metaMeter(b, 58) : h('div', { class: 'fin-meter empty' }, h('span', null, empty ? 'Mes sin movimientos todavía.' : 'Sin meta de facturación.'), h('button', { type: 'button', class: 'add-line', onclick: () => openMeta(b.mes) }, '+ Definir meta')));
+        return card;
+      })));
+    });
+  }
+
+  function openMeta(mes) {
+    const nuevo = !mes;
+    const f = { mes: mes || addMonths(monthOf(todayISO()), metaDe(monthOf(todayISO())) ? 1 : 0), meta: mes ? metaDe(mes) : 0 };
+    const errEl = h('div', { class: 'fin-err', role: 'alert' });
+    const mesIn = h('input', { type: 'month', class: 'field', id: 'm-mes', value: f.mes.slice(0, 7), onchange: e => { if (e.target.value) { f.mes = e.target.value + '-01'; const m = metaDe(f.mes); if (m) { f.meta = m; metaBox.replaceWith(metaBox = mkMeta()); } } } });
+    const mkMeta = () => lbl('Meta de facturación del mes', 'm-meta', moneyInput('m-meta', f.meta, v => { f.meta = v; }));
+    let metaBox = mkMeta();
+    const content = h('div', { class: 'stack' },
+      nuevo ? lbl('Mes', 'm-mes', mesIn) : h('p', { class: 'help', style: { margin: 0 } }, 'Lo que esperan facturar en ' + monthLabel(f.mes) + '. Solo cuenta ingresos de clientes.'),
+      metaBox, errEl);
+    const actions = [h('button', { type: 'button', class: 'btn', onclick: closeSheet }, 'Cancelar')];
+    if (!nuevo && metaDe(mes)) actions.unshift(h('button', { type: 'button', class: 'btn ghost danger', style: { marginRight: 'auto' }, onclick: async () => { try { await store.delMeta(mes); closeSheet(); toast('Meta eliminada'); await refresh(); } catch (e) { toast('No se pudo eliminar'); } } }, 'Quitar meta'));
+    const save = h('button', { type: 'button', class: 'btn primary huge', onclick: async () => {
+      if (!f.meta) { errEl.textContent = 'Escribe el valor de la meta.'; return; }
+      busy(save, 'Guardando…');
+      try { await store.setMeta(f.mes, f.meta); closeSheet(); toast('Meta guardada para ' + monthLabel(f.mes)); await refresh(); }
+      catch (e) { console.error(e); errEl.textContent = S.metasMissing ? 'Primero corre supabase/metas.sql en Supabase.' : 'No se pudo guardar.'; unbusy(save); }
+    } }, 'Guardar meta');
+    actions.push(save);
+    openSheet(nuevo ? 'Nuevo mes con meta' : 'Meta de ' + monthLabel(mes), nuevo ? 'Define cuánto esperan facturar ese mes. El medidor se llena con lo que se registre en Pagos.' : null, content, actions, 'verde');
   }
 
   /* =====================================================================
@@ -243,7 +373,7 @@
       const p = PALETTES[r.color] || PALETTES.azul;
       const bar = h('div', { class: 'fin-bar-row' },
         h('div', { class: 'fin-bar-lb' }, r.abbr ? h('b', { style: { color: p.ac } }, r.abbr) : null, r.label),
-        h('div', { class: 'fin-bar-track' }, h('i', { style: { width: Math.max(r.value > 0 ? 2 : 0, r.value / max * 100) + '%', background: opts && opts.single ? 'var(--brand)' : p.ac } })),
+        h('div', { class: 'fin-bar-track' }, (() => { const b = growBar(Math.max(r.value > 0 ? 2 : 0, r.value / max * 100)); b.style.background = opts && opts.single ? 'var(--brand)' : p.ac; return b; })()),
         h('div', { class: 'fin-bar-v' }, money(r.value)));
       bindTip(bar, `${r.label}: ${money(r.value)}${total ? ' · ' + Math.round(r.value / total * 100) + '%' : ''}${r.sub ? ' · ' + r.sub : ''}`);
       return bar;
@@ -256,7 +386,7 @@
     const has = (S.prev && (S.prev.pagos.length || S.prev.gastos.length));
     const ml = monthLabel(S.mes);
     if (!S.pagos.length && !S.gastos.length) {
-      body.append(h('div', { class: 'block fin-empty' }, h('h3', null, `Aún no hay movimientos en ${ml}`),
+      body.append(h('div', { class: 'block fin-empty fin-rise' }, h('h3', null, `Aún no hay movimientos en ${ml}`),
         h('p', { class: 'help' }, 'Registra el primer pago o gasto con los botones de arriba. También puedes generar los cobros de los clientes de marketing mensual desde Pagos.')));
       return;
     }
@@ -267,14 +397,16 @@
       ['Nómina', t.nomina, tp && has ? delta(t.nomina, tp.nomina, true) : null, 'Incluye servicios extra'],
       ['Gastos en recursos', t.gastos, tp && has ? delta(t.gastos, tp.gastos, true) : null, `${S.gastos.filter(g => g.categoria !== 'nomina' && g.categoria !== 'extra' && g.movimiento !== 'entrada').length} gastos`]
     ];
-    body.append(h('div', { class: 'fin-sum-head' },
+    body.append(h('div', { class: 'fin-sum-head fin-rise' },
       h('div', null, h('h2', { class: 'fin-h2' }, 'Resumen de ' + ml), h('p', { class: 'help' }, 'Saldo neto = facturado − nómina − gastos en recursos. Los préstamos que entran a Brandgo no cuentan como gasto.')),
       h('button', { type: 'button', class: 'btn primary', id: 'pdfBtn', onclick: e => exportResumen(e.currentTarget) }, 'Exportar PDF')));
-    body.append(h('div', { class: 'fin-hero ' + (t.saldo >= 0 ? 'pos' : 'neg') },
-      h('div', null, h('span', { class: 'k' }, 'Saldo neto del mes'), h('div', { class: 'v' }, h('b', null, (t.saldo < 0 ? '−' : '') + money(Math.abs(t.saldo))), h('span', null, 'COP')),
-        h('small', null, `Con lo recibido hasta hoy, la caja va en ${(t.caja < 0 ? '−' : '') + money(Math.abs(t.caja))} COP.`)),
-      tp && has ? delta(t.saldo, tp.saldo) : null));
-    body.append(h('div', { class: 'fin-tiles' }, tiles.map(([k, v, d, s]) => h('div', { class: 'fin-tile' }, h('span', { class: 'k' }, k), h('b', null, money(v)), h('small', null, s), d))));
+    const meta = metaDe(S.mes);
+    body.append(h('div', { class: 'fin-hero fin-rise ' + (t.saldo >= 0 ? 'pos' : 'neg') },
+      h('div', null, h('span', { class: 'k' }, 'Saldo neto del mes'), h('div', { class: 'v' }, counted(t.saldo), h('span', null, 'COP')),
+        tp && has ? delta(t.saldo, tp.saldo) : null),
+      meta ? metaMeter({ facturado: t.facturado, meta }, 72)
+        : h('button', { type: 'button', class: 'btn', onclick: () => openMeta(S.mes) }, '+ Definir meta de facturación')));
+    body.append(h('div', { class: 'fin-tiles' }, tiles.map(([k, v, d, s]) => h('div', { class: 'fin-tile fin-rise' }, h('span', { class: 'k' }, k), counted(v), h('small', null, s), d))));
 
     // Ingresos por categoría
     const ingRows = Object.entries(CAT_ING).map(([k, c]) => { const ps = S.pagos.filter(p => p.categoria === k); return { label: c.label, abbr: c.abbr, color: c.color, value: ps.reduce((s, p) => s + Number(p.valor), 0), sub: ps.length + (ps.length === 1 ? ' cobro' : ' cobros') }; });
@@ -283,11 +415,11 @@
     const pend = S.pagos.filter(p => estado(p) !== 'pagado').sort((a, b) => (Number(b.valor) - pagado(b)) - (Number(a.valor) - pagado(a)));
 
     body.append(h('div', { class: 'fin-grid' },
-      h('section', { class: 'block' }, h('h3', null, 'Ingresos por categoría'), h('p', { class: 'fin-cap' }, 'Valor facturado del mes'), barChart(ingRows, t.facturado)),
-      h('section', { class: 'block' }, h('h3', null, 'Gastos por categoría'), h('p', { class: 'fin-cap' }, 'Incluye nómina; sin préstamos recibidos'), gasRows.length ? barChart(gasRows, t.gastos + t.nomina, { single: true }) : h('p', { class: 'help' }, 'Sin gastos este mes.')),
-      h('section', { class: 'block' }, h('h3', null, 'Estado de los cobros'),
+      h('section', { class: 'block fin-rise' }, h('h3', null, 'Ingresos por categoría'), h('p', { class: 'fin-cap' }, 'Valor facturado del mes'), barChart(ingRows, t.facturado)),
+      h('section', { class: 'block fin-rise' }, h('h3', null, 'Gastos por categoría'), h('p', { class: 'fin-cap' }, 'Incluye nómina; sin préstamos recibidos'), gasRows.length ? barChart(gasRows, t.gastos + t.nomina, { single: true }) : h('p', { class: 'help' }, 'Sin gastos este mes.')),
+      h('section', { class: 'block fin-rise' }, h('h3', null, 'Estado de los cobros'),
         h('div', { class: 'fin-states' }, porEstado.map(x => h('div', { class: 'fin-state' }, estadoChip(x.e), h('b', null, x.n), h('small', null, x.e === 'pagado' ? money(x.tot) + ' cobrados' : money(x.v) + ' por cobrar'))))),
-      h('section', { class: 'block' }, h('h3', null, 'Quién falta por pagar'),
+      h('section', { class: 'block fin-rise' }, h('h3', null, 'Quién falta por pagar'),
         pend.length ? h('div', { class: 'fin-list' }, pend.slice(0, 8).map(p => h('div', { class: 'fin-li' }, chipAbbr(p.categoria, CAT_ING), h('span', { class: 'n' }, clienteDe(p).nombre), h('span', { class: 'a' }, avance(p) + '%'), h('b', null, money(Number(p.valor) - pagado(p))),
           h('button', { type: 'button', class: 'btn small', onclick: () => openPago({ cliente_id: p.cliente_id }) }, 'Abonar'))))
           : h('p', { class: 'help' }, 'Todos los clientes del mes están al día.'))));
@@ -300,17 +432,17 @@
     const rows = S.pagos.filter(p => (S.filtroEstado === 'todos' || estado(p) === S.filtroEstado) && (S.filtroCat === 'todas' || p.categoria === S.filtroCat) && clienteDe(p).nombre.toLowerCase().includes(S.buscar.toLowerCase()))
       .sort((a, b) => clienteDe(a).nombre.localeCompare(clienteDe(b).nombre));
     const sinCobro = S.clientes.filter(c => c.activo && c.categoria === 'mensual' && !S.pagos.some(p => p.cliente_id === c.id));
-    const search = h('input', { class: 'field', type: 'search', id: 'fin-buscar', placeholder: 'Buscar cliente', value: S.buscar, oninput: e => { S.buscar = e.target.value; const pos = e.target.selectionStart; render(); const el = $('#fin-buscar'); el.focus(); el.setSelectionRange(pos, pos); } });
-    body.append(h('div', { class: 'fin-tools' },
+    const search = h('input', { class: 'field', type: 'search', id: 'fin-buscar', placeholder: 'Buscar cliente', value: S.buscar, oninput: e => { S.buscar = e.target.value; const pos = e.target.selectionStart; render(false); const el = $('#fin-buscar'); el.focus(); el.setSelectionRange(pos, pos); } });
+    body.append(h('div', { class: 'fin-tools fin-rise' },
       h('h2', { class: 'fin-h2' }, 'Pagos de ' + monthLabel(S.mes)),
       h('div', { class: 'fin-filters' },
-        segment([['todos', 'Todos'], ['pagado', 'Pagado'], ['proceso', 'En proceso'], ['pendiente', 'Pendiente']], S.filtroEstado, v => { S.filtroEstado = v; render(); }),
-        segment([['todas', 'Todas'], ...Object.entries(CAT_ING).map(([k, c]) => [k, c.abbr])], S.filtroCat, v => { S.filtroCat = v; render(); }),
+        segment([['todos', 'Todos'], ['pagado', 'Pagado'], ['proceso', 'En proceso'], ['pendiente', 'Pendiente']], S.filtroEstado, v => { S.filtroEstado = v; render(false); }),
+        segment([['todas', 'Todas'], ...Object.entries(CAT_ING).map(([k, c]) => [k, c.abbr])], S.filtroCat, v => { S.filtroCat = v; render(false); }),
         search),
       sinCobro.length ? h('button', { type: 'button', class: 'btn', onclick: () => generarMensuales(sinCobro) }, `+ Generar ${sinCobro.length} ${sinCobro.length === 1 ? 'cobro mensual' : 'cobros mensuales'}`) : null));
-    if (!S.pagos.length) { body.append(h('div', { class: 'block fin-empty' }, h('h3', null, 'Sin pagos este mes'), h('p', { class: 'help' }, 'Usa "Registrar pago" o genera los cobros de los clientes de marketing mensual.'))); return; }
+    if (!S.pagos.length) { body.append(h('div', { class: 'block fin-empty fin-rise' }, h('h3', null, 'Sin pagos este mes'), h('p', { class: 'help' }, 'Usa "Registrar pago" o genera los cobros de los clientes de marketing mensual.'))); return; }
     const sum = (f) => rows.reduce((s, p) => s + f(p), 0);
-    body.append(h('div', { class: 'fin-table-wrap' }, h('table', { class: 'fin-table' },
+    body.append(h('div', { class: 'fin-table-wrap fin-rise' }, h('table', { class: 'fin-table' },
       h('thead', null, h('tr', null, ['Cliente', 'Cat.', 'Valor', 'Avance', 'Recibido', 'Por cobrar', 'Último pago', 'Estado', ''].map((c, i) => h('th', { class: i >= 2 && i <= 5 ? 'num' : '' }, c)))),
       h('tbody', null, rows.map(p => {
         const e = estado(p), av = avance(p);
@@ -318,7 +450,7 @@
           h('td', { class: 'name' }, h('b', null, clienteDe(p).nombre), p.concepto ? h('small', null, p.concepto) : null),
           h('td', null, chipAbbr(p.categoria, CAT_ING)),
           h('td', { class: 'num' }, money(p.valor)),
-          h('td', { class: 'num' }, h('div', { class: 'fin-prog' }, h('i', { style: { width: av + '%' } })), h('small', null, av + '%')),
+          h('td', { class: 'num' }, h('div', { class: 'fin-prog' }, growBar(av)), h('small', null, av + '%')),
           h('td', { class: 'num' }, money(pagado(p))),
           h('td', { class: 'num' }, money(Math.max(0, Number(p.valor) - pagado(p)))),
           h('td', null, dateShort(ultimoPago(p))),
@@ -364,16 +496,16 @@
   function viewGastos(body) {
     const prevNomina = (S.prev ? S.prev.gastos : []).filter(g => g.categoria === 'nomina');
     const tieneNomina = S.gastos.some(g => g.categoria === 'nomina');
-    body.append(h('div', { class: 'fin-tools' },
+    body.append(h('div', { class: 'fin-tools fin-rise' },
       h('h2', { class: 'fin-h2' }, 'Gastos de ' + monthLabel(S.mes)),
       !tieneNomina && prevNomina.length ? h('button', { type: 'button', class: 'btn', onclick: () => copiarNomina(prevNomina) }, `+ Copiar nómina de ${monthLabel(addMonths(S.mes, -1)).split(' ')[0].toLowerCase()} (${prevNomina.length})`) : null));
-    if (!S.gastos.length) { body.append(h('div', { class: 'block fin-empty' }, h('h3', null, 'Sin gastos este mes'), h('p', { class: 'help' }, 'Usa "Registrar gasto" para el primero.'))); return; }
+    if (!S.gastos.length) { body.append(h('div', { class: 'block fin-empty fin-rise' }, h('h3', null, 'Sin gastos este mes'), h('p', { class: 'help' }, 'Usa "Registrar gasto" para el primero.'))); return; }
     const groups = [['Gastos en recursos', S.gastos.filter(g => g.categoria !== 'nomina' && g.categoria !== 'extra')], ['Nómina', S.gastos.filter(g => g.categoria === 'nomina' || g.categoria === 'extra')]];
     groups.forEach(([title, list]) => {
       if (!list.length) return;
       const tot = list.filter(g => g.movimiento !== 'entrada').reduce((s, g) => s + Number(g.valor), 0);
       body.append(h('h3', { class: 'fin-h3' }, title, h('span', null, money(tot))));
-      body.append(h('div', { class: 'fin-table-wrap' }, h('table', { class: 'fin-table' },
+      body.append(h('div', { class: 'fin-table-wrap fin-rise' }, h('table', { class: 'fin-table' },
         h('thead', null, h('tr', null, ['Concepto', 'Categoría', 'Fecha', 'Valor', ''].map((c, i) => h('th', { class: i === 3 ? 'num' : '' }, c)))),
         h('tbody', null, list.map(g => h('tr', null,
           h('td', { class: 'name' }, h('b', null, g.concepto), g.movimiento === 'entrada' ? h('small', null, 'Entra a Brandgo · no suma como gasto') : (g.notas ? h('small', null, g.notas) : null)),
@@ -395,10 +527,10 @@
      CLIENTES
      ===================================================================== */
   function viewClientes(body) {
-    body.append(h('div', { class: 'fin-tools' }, h('h2', { class: 'fin-h2' }, 'Clientes'),
+    body.append(h('div', { class: 'fin-tools fin-rise' }, h('h2', { class: 'fin-h2' }, 'Clientes'),
       h('button', { type: 'button', class: 'btn primary', onclick: () => openCliente() }, '+ Nuevo cliente')));
-    if (!S.clientes.length) { body.append(h('div', { class: 'block fin-empty' }, h('h3', null, 'Aún no hay clientes'), h('p', { class: 'help' }, 'Crea el perfil de cada cliente con su categoría, el valor que representa y su día de pago.'))); return; }
-    body.append(h('div', { class: 'fin-table-wrap' }, h('table', { class: 'fin-table' },
+    if (!S.clientes.length) { body.append(h('div', { class: 'block fin-empty fin-rise' }, h('h3', null, 'Aún no hay clientes'), h('p', { class: 'help' }, 'Crea el perfil de cada cliente con su categoría, el valor que representa y su día de pago.'))); return; }
+    body.append(h('div', { class: 'fin-table-wrap fin-rise' }, h('table', { class: 'fin-table' },
       h('thead', null, h('tr', null, ['Cliente', 'Categoría', 'Valor', 'Día de pago', 'Este mes', ''].map((c, i) => h('th', { class: i === 2 ? 'num' : '' }, c)))),
       h('tbody', null, S.clientes.map(c => {
         const p = S.pagos.find(x => x.cliente_id === c.id);
@@ -658,7 +790,7 @@
       h('div', { class: 'd-concept', style: { marginTop: '8px', color: '#6e6e73' } }, ml)));
     out.push(h('div', { class: 'd-sum' }, h('div', { class: 'lb' }, 'Saldo neto del mes'),
       h('div', { class: 'amt' }, h('b', { style: { color: t.saldo < 0 ? '#d92d4a' : '#1d1d1f' } }, sign(t.saldo)), h('span', null, 'COP')),
-      h('div', { class: 'words' }, `Facturado ${money(t.facturado)} − nómina ${money(t.nomina)} − gastos en recursos ${money(t.gastos)}. Caja con lo recibido: ${sign(t.caja)}.`)));
+      h('div', { class: 'words' }, `Facturado ${money(t.facturado)} − nómina ${money(t.nomina)} − gastos en recursos ${money(t.gastos)}.` + (metaDe(S.mes) ? ` Meta de facturación ${money(metaDe(S.mes))}: ${Math.round(t.facturado / metaDe(S.mes) * 100)}% alcanzado.` : ''))));
     out.push(h('div', { class: 'r-kpis' }, [['Facturado', t.facturado], ['Recibido', t.recibido], ['Por cobrar', t.porCobrar], ['Nómina', t.nomina], ['Gastos', t.gastos]].map(([k, v]) => h('div', { class: 'd-card' }, h('div', { class: 'lb' }, k), h('div', { class: 'nm' }, money(v))))));
     const table = (title, cols, rows, foot, color) => {
       const p = PALETTES[color];

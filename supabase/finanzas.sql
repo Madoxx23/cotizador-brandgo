@@ -77,6 +77,15 @@ create table if not exists public.gastos (
 );
 create index if not exists gastos_mes_idx on public.gastos (mes);
 
+-- ---------- Metas de facturación por mes ----------
+create table if not exists public.metas (
+  mes         date primary key check (extract(day from mes) = 1),
+  meta        numeric(14, 0) not null check (meta >= 0),
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  created_by  uuid default auth.uid() references auth.users (id) on delete set null
+);
+
 -- ---------- updated_at automático ----------
 create or replace function public.tocar_updated_at()
 returns trigger language plpgsql set search_path = public as $$
@@ -88,12 +97,15 @@ drop trigger if exists pagos_updated on public.pagos;
 create trigger pagos_updated before update on public.pagos for each row execute function public.tocar_updated_at();
 drop trigger if exists gastos_updated on public.gastos;
 create trigger gastos_updated before update on public.gastos for each row execute function public.tocar_updated_at();
+drop trigger if exists metas_updated on public.metas;
+create trigger metas_updated before update on public.metas for each row execute function public.tocar_updated_at();
 
 -- ---------- Row Level Security ----------
 alter table public.miembros enable row level security;
 alter table public.clientes enable row level security;
 alter table public.pagos    enable row level security;
 alter table public.gastos   enable row level security;
+alter table public.metas    enable row level security;
 
 -- Cada persona solo puede ver su propia fila en `miembros` (para que la web sepa si tiene acceso).
 drop policy if exists "miembro ve su fila" on public.miembros;
@@ -105,13 +117,15 @@ drop policy if exists "miembros gestionan pagos" on public.pagos;
 create policy "miembros gestionan pagos" on public.pagos for all to authenticated using (public.es_miembro()) with check (public.es_miembro());
 drop policy if exists "miembros gestionan gastos" on public.gastos;
 create policy "miembros gestionan gastos" on public.gastos for all to authenticated using (public.es_miembro()) with check (public.es_miembro());
+drop policy if exists "miembros gestionan metas" on public.metas;
+create policy "miembros gestionan metas" on public.metas for all to authenticated using (public.es_miembro()) with check (public.es_miembro());
 
 -- Los visitantes sin sesión no tienen ningún permiso sobre estas tablas.
-revoke all on public.miembros, public.clientes, public.pagos, public.gastos from anon;
+revoke all on public.miembros, public.clientes, public.pagos, public.gastos, public.metas from anon;
 -- Permisos explícitos (necesarios si "Automatically expose new tables" está desactivado, como se recomienda).
 grant usage on schema public to authenticated;
 grant select on public.miembros to authenticated;
-grant select, insert, update, delete on public.clientes, public.pagos, public.gastos to authenticated;
+grant select, insert, update, delete on public.clientes, public.pagos, public.gastos, public.metas to authenticated;
 
 -- =====================================================================
 -- PASO FINAL (correr aparte, después de crear los usuarios en Authentication → Users):

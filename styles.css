@@ -595,3 +595,76 @@ a.brand { text-decoration: none; color: inherit; }
 
 /* Tarjeta de finanzas en el inicio */
 .task .task-lock { position: absolute; right: 22px; top: 22px; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--c); background: var(--paper); border: 1px solid var(--c-bd); border-radius: 999px; padding: 4px 10px; }
+
+/* ---------- Finanzas: balance por mes, metas y animaciones ---------- */
+.fin-year { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin: 26px 4px 12px; }
+.fin-year h3 { margin: 0; font-size: 28px; letter-spacing: -.04em; }
+.fin-year span { color: var(--ink-2); font-size: 14px; }
+.fin-year b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.fin-year b.neg { color: var(--danger); }
+.fin-notice { margin-top: 14px; }
+.fin-notice h3 { margin: 0; font-size: 16px; }
+.fin-months { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 270px), 1fr)); gap: 14px; }
+.fin-mcard {
+  position: relative; background: var(--paper); border: 1px solid var(--line); border-radius: 30px; padding: 20px 20px 18px; display: flex; flex-direction: column; gap: 14px; cursor: pointer; min-width: 0;
+  box-shadow: 0 1px 2px rgba(29,29,31,.03); transition: transform .45s cubic-bezier(.2,.8,.2,1), box-shadow .45s cubic-bezier(.2,.8,.2,1), border-color .3s;
+}
+.fin-mcard:hover { transform: translateY(-4px) scale(1.01); box-shadow: 0 22px 48px rgba(29,29,31,.10); }
+.fin-mcard:active { transform: scale(.985); transition-duration: .15s; }
+.fin-mcard:focus-visible { outline: 3px solid var(--brand); outline-offset: 3px; }
+.fin-mcard.current { border-color: #bfc5f6; background: linear-gradient(180deg, #f3f5ff 0, var(--paper) 120px); }
+.fin-mcard.selected { box-shadow: 0 0 0 3px #eef0fe, 0 1px 2px rgba(29,29,31,.03); }
+.fin-mcard-h { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.fin-mcard-h h3 { margin: 0; font-size: 26px; letter-spacing: -.04em; line-height: 1.05; }
+.fin-mcard-h small { color: var(--ink-2); font-size: 12.5px; }
+.fin-mcard.current .fin-mcard-h small { color: var(--brand); font-weight: 600; }
+.fin-mcard-k span { display: block; font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
+.fin-mcard-k b { display: block; font-size: 32px; letter-spacing: -.045em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.fin-mcard-rows { display: flex; flex-direction: column; }
+.fin-mcard-rows div { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.fin-mcard-rows span { color: var(--ink-2); }
+.fin-mcard-rows b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.fin-mcard-rows .net span { color: var(--ink); font-weight: 700; }
+.fin-mcard-rows .net b { font-weight: 800; font-size: 16px; }
+.fin-mcard-rows .net.pos b { color: #15803d; }
+.fin-mcard-rows .net.neg b { color: var(--danger); }
+
+/* Medidor de meta */
+.fin-meter { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 20px; background: #f6f6f8; }
+.fin-meter.done { background: #eff9f2; }
+.fin-meter.empty { justify-content: space-between; color: var(--ink-2); font-size: 13px; flex-wrap: wrap; }
+.fin-ring-wrap { position: relative; flex: none; display: grid; place-items: center; }
+.fin-ring-wrap span { position: absolute; font-size: 13px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.fin-ring { position: absolute; inset: 0; }
+.fin-ring .bg { fill: none; stroke: #e4e5ec; stroke-width: 7; }
+.fin-ring .fg { fill: none; stroke: var(--brand); stroke-width: 7; stroke-linecap: round; transition: stroke-dashoffset 1.3s cubic-bezier(.2,.8,.2,1) .15s; }
+.fin-meter.done .fin-ring .fg { stroke: #16a34a; }
+.fin-meter-t { display: flex; flex-direction: column; min-width: 0; }
+.fin-meter-t span { font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.fin-meter-t b { font-size: 18px; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.fin-meter-t small { font-size: 12.5px; color: var(--ink-2); }
+.fin-meter.done .fin-meter-t small { color: #15803d; font-weight: 600; }
+.fin-hero .fin-meter { background: rgba(255,255,255,.7); min-width: 240px; }
+.fin-hero .fin-delta { display: block; margin-top: 4px; }
+
+/* Barras que crecen */
+.fin-bar-track i, .fin-prog i { transition: width 1s cubic-bezier(.2,.8,.2,1) .1s; }
+
+/* Entrada escalonada estilo Apple */
+@keyframes finRise { from { opacity: 0; transform: translateY(16px) scale(.98); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
+.fin-body.animate .fin-rise { animation: finRise .7s cubic-bezier(.2,.8,.2,1) both; animation-delay: calc(var(--i, 0) * 50ms); }
+@keyframes finFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes finSheet { from { opacity: 0; transform: translateY(24px) scale(.97); } to { opacity: 1; transform: none; } }
+.fin-overlay { animation: finFade .25s ease both; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.fin-sheet { animation: finSheet .45s cubic-bezier(.2,.9,.25,1) both; }
+@media (max-width: 640px) { @keyframes finSheetUp { from { transform: translateY(100%); } to { transform: none; } } .fin-sheet { animation: finSheetUp .45s cubic-bezier(.2,.9,.25,1) both; } }
+.fin-tabs button { transition: background .3s, color .3s; }
+.fin-tabs button b { transition: background .3s, color .3s; }
+.fin-qa, .fin-tile, .fin-bar-row { transition: transform .35s cubic-bezier(.2,.8,.2,1), box-shadow .35s, background .2s; }
+.fin-tile:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(29,29,31,.06); }
+.btn { transition: background .15s, border-color .15s, transform .2s cubic-bezier(.2,.8,.2,1); }
+@media (prefers-reduced-motion: reduce) {
+  .fin-body.animate .fin-rise, .fin-overlay, .fin-sheet { animation: none; }
+  .fin-mcard, .fin-mcard:hover, .fin-tile:hover { transform: none; transition: none; }
+  .fin-ring .fg, .fin-bar-track i, .fin-prog i { transition: none; }
+}
