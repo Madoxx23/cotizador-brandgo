@@ -127,6 +127,51 @@ grant usage on schema public to authenticated;
 grant select on public.miembros to authenticated;
 grant select, insert, update, delete on public.clientes, public.pagos, public.gastos, public.metas to authenticated;
 
+-- ---------- Equipo y nómina (pagos por abonos) ----------
+create table if not exists public.equipo (
+  id          uuid primary key default gen_random_uuid(),
+  nombre      text not null check (length(trim(nombre)) between 1 and 120),
+  rol         text check (length(rol) <= 80),
+  avatar      text check (avatar in ('camilo', 'juca', 'laura', 'malu', 'mauro')),
+  tipo        text not null default 'nomina' check (tipo in ('nomina', 'extra')),
+  salario     numeric(14, 0) not null default 0 check (salario >= 0),
+  dia_pago    smallint default 15 check (dia_pago between 1 and 31),
+  activo      boolean not null default true,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  created_by  uuid default auth.uid() references auth.users (id) on delete set null
+);
+
+create table if not exists public.nomina (
+  id          uuid primary key default gen_random_uuid(),
+  persona_id  uuid not null references public.equipo (id) on delete restrict,
+  mes         date not null check (extract(day from mes) = 1),
+  tipo        text not null default 'nomina' check (tipo in ('nomina', 'extra')),
+  valor       numeric(14, 0) not null check (valor >= 0),
+  abonos      jsonb not null default '[]'::jsonb check (jsonb_typeof(abonos) = 'array'),
+  notas       text check (length(notas) <= 1000),
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  created_by  uuid default auth.uid() references auth.users (id) on delete set null,
+  unique (persona_id, mes)
+);
+create index if not exists nomina_mes_idx on public.nomina (mes);
+
+drop trigger if exists equipo_updated on public.equipo;
+create trigger equipo_updated before update on public.equipo for each row execute function public.tocar_updated_at();
+drop trigger if exists nomina_updated on public.nomina;
+create trigger nomina_updated before update on public.nomina for each row execute function public.tocar_updated_at();
+
+alter table public.equipo enable row level security;
+alter table public.nomina enable row level security;
+drop policy if exists "miembros gestionan equipo" on public.equipo;
+create policy "miembros gestionan equipo" on public.equipo for all to authenticated using (public.es_miembro()) with check (public.es_miembro());
+drop policy if exists "miembros gestionan nomina" on public.nomina;
+create policy "miembros gestionan nomina" on public.nomina for all to authenticated using (public.es_miembro()) with check (public.es_miembro());
+revoke all on public.equipo, public.nomina from anon;
+grant select, insert, update, delete on public.equipo, public.nomina to authenticated;
+
+
 -- =====================================================================
 -- PASO FINAL (correr aparte, después de crear los usuarios en Authentication → Users):
 -- cambia los correos por los de las personas autorizadas.

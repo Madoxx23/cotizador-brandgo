@@ -26,6 +26,13 @@
     nomina:      { label: 'Nómina', abbr: 'NO', color: 'azul' },
     extra:       { label: 'Servicio extra', abbr: 'SX', color: 'violeta' }
   };
+  // Nómina y servicio extra ya no se registran como gasto: tienen su propia sección con abonos.
+  const CAT_GAS_PICK = Object.fromEntries(Object.entries(CAT_GAS).filter(([k]) => k !== 'nomina' && k !== 'extra'));
+  const TIPO_NOM = {
+    nomina: { label: 'Nómina', abbr: 'NO', color: 'verde' },
+    extra:  { label: 'Servicio extra', abbr: 'SX', color: 'violeta' }
+  };
+  const AVATARS = { camilo: 'Camilo', juca: 'Juca', laura: 'Laura', malu: 'Malu', mauro: 'Mauro' };
   const ESTADOS = { pagado: { label: 'Pagado', cls: 'ok' }, proceso: { label: 'En proceso', cls: 'mid' }, pendiente: { label: 'Pendiente', cls: 'no' } };
 
   /* ---------------- Fechas y dinero ---------------- */
@@ -65,6 +72,9 @@
       async gastos(mes) { return ok(await sb.from('gastos').select('*').eq('mes', mes).order('fecha')); },
       async allPagos() { return ok(await sb.from('pagos').select('mes,valor,abonos')); },
       async allGastos() { return ok(await sb.from('gastos').select('mes,valor,categoria,movimiento')); },
+      async equipo() { return ok(await sb.from('equipo').select('*').order('nombre')); },
+      async nomina(mes) { return ok(await sb.from('nomina').select('*').eq('mes', mes)); },
+      async allNomina() { return ok(await sb.from('nomina').select('mes,valor,abonos')); },
       async metas() { return ok(await sb.from('metas').select('mes,meta')); },
       async setMeta(mes, meta) { return ok(await sb.from('metas').upsert({ mes, meta }, { onConflict: 'mes' }).select().single()); },
       async delMeta(mes) { ok(await sb.from('metas').delete().eq('mes', mes)); },
@@ -76,8 +86,8 @@
   }
 
   function demoStore() {
-    let db = { clientes: [], pagos: [], gastos: [], metas: [] }; let session = null;
-    const ready = fetch('/__scratch/demo-data.json').then(r => r.ok ? r.json() : db).then(d => { db = Object.assign({ metas: [] }, d); }).catch(() => {});
+    let db = { clientes: [], pagos: [], gastos: [], metas: [], equipo: [], nomina: [] }; let session = null;
+    const ready = fetch('/__scratch/demo-data.json').then(r => r.ok ? r.json() : db).then(d => { db = Object.assign({ metas: [], equipo: [], nomina: [] }, d); }).catch(() => {});
     const id = () => 'd' + Math.random().toString(36).slice(2, 10);
     return {
       async session() { await ready; return session; },
@@ -89,6 +99,9 @@
       async gastos(mes) { return db.gastos.filter(g => g.mes === mes).sort((a, b) => a.fecha.localeCompare(b.fecha)); },
       async allPagos() { return db.pagos; },
       async allGastos() { return db.gastos; },
+      async equipo() { return db.equipo.slice().sort((a, b) => a.nombre.localeCompare(b.nombre)); },
+      async nomina(mes) { return db.nomina.filter(n => n.mes === mes); },
+      async allNomina() { return db.nomina; },
       async metas() { return db.metas; },
       async setMeta(mes, meta) { const r = db.metas.find(m => m.mes === mes); if (r) r.meta = meta; else db.metas.push({ mes, meta }); return { mes, meta }; },
       async delMeta(mes) { db.metas = db.metas.filter(m => m.mes !== mes); },
@@ -103,25 +116,44 @@
   const store = isDemo ? demoStore() : (configured ? supabaseStore() : null);
 
   /* ---------------- Estado de la vista ---------------- */
-  const S = { user: null, mes: monthOf(todayISO()), tab: 'meses', clientes: [], pagos: [], gastos: [], prev: null, all: { pagos: [], gastos: [] }, metas: [], metasMissing: false, filtroEstado: 'todos', filtroCat: 'todas', buscar: '' };
+  const S = { user: null, mes: monthOf(todayISO()), tab: 'meses', clientes: [], pagos: [], gastos: [], equipo: [], nomina: [], prev: null, all: { pagos: [], gastos: [], nomina: [] }, metas: [], metasMissing: false, nominaMissing: false, filtroEstado: 'todos', filtroCat: 'todas', buscar: '' };
 
   async function load() {
     const prevMes = addMonths(S.mes, -1);
     const metasP = store.metas().then(m => { S.metasMissing = false; return m; }).catch(() => { S.metasMissing = true; return []; });
-    const [clientes, pagos, gastos, pp, pg, ap, ag, metas] = await Promise.all([store.clientes(), store.pagos(S.mes), store.gastos(S.mes), store.pagos(prevMes), store.gastos(prevMes), store.allPagos(), store.allGastos(), metasP]);
-    Object.assign(S, { clientes, pagos, gastos, prev: { pagos: pp, gastos: pg }, all: { pagos: ap, gastos: ag }, metas });
+    // Si aún no se ha corrido supabase/nomina.sql, el resto del módulo sigue funcionando.
+    const nomP = Promise.all([store.equipo(), store.nomina(S.mes), store.nomina(prevMes), store.allNomina()])
+      .then(r => { S.nominaMissing = false; return r; }).catch(() => { S.nominaMissing = true; return [[], [], [], []]; });
+    const [clientes, pagos, gastos, pp, pg, ap, ag, metas, [equipo, nomina, pn, an]] = await Promise.all([store.clientes(), store.pagos(S.mes), store.gastos(S.mes), store.pagos(prevMes), store.gastos(prevMes), store.allPagos(), store.allGastos(), metasP, nomP]);
+    Object.assign(S, { clientes, pagos, gastos, equipo, nomina, prev: { pagos: pp, gastos: pg, nomina: pn }, all: { pagos: ap, gastos: ag, nomina: an }, metas });
   }
   const metaDe = mes => { const m = S.metas.find(x => x.mes === mes); return m ? Number(m.meta) : 0; };
   const clienteDe = p => S.clientes.find(c => c.id === p.cliente_id) || { nombre: 'Cliente eliminado', categoria: p.categoria };
+  const personaDe = n => S.equipo.find(e => e.id === n.persona_id) || { nombre: 'Persona eliminada', tipo: n.tipo };
+  const esNominaGasto = g => g.categoria === 'nomina' || g.categoria === 'extra';
 
-  function totals(pagos, gastos) {
+  function totals(pagos, gastos, nomina) {
+    nomina = nomina || [];
     const facturado = pagos.reduce((s, p) => s + Number(p.valor), 0);
     const recibido = pagos.reduce((s, p) => s + pagado(p), 0);
     const salidas = gastos.filter(g => g.movimiento !== 'entrada');
-    const nomina = salidas.filter(g => g.categoria === 'nomina' || g.categoria === 'extra').reduce((s, g) => s + Number(g.valor), 0);
-    const gastosRec = salidas.filter(g => g.categoria !== 'nomina' && g.categoria !== 'extra').reduce((s, g) => s + Number(g.valor), 0);
+    // Nómina: la de su propia tabla más la que quedara registrada como gasto (datos anteriores)
+    const nominaGasto = salidas.filter(esNominaGasto).reduce((s, g) => s + Number(g.valor), 0);
+    const nominaTotal = nomina.reduce((s, n) => s + Number(n.valor), 0) + nominaGasto;
+    const nominaPagada = nomina.reduce((s, n) => s + pagado(n), 0) + nominaGasto;
+    const gastosRec = salidas.filter(g => !esNominaGasto(g)).reduce((s, g) => s + Number(g.valor), 0);
     const entradas = gastos.filter(g => g.movimiento === 'entrada').reduce((s, g) => s + Number(g.valor), 0);
-    return { facturado, recibido, porCobrar: facturado - recibido, nomina, gastos: gastosRec, entradas, saldo: facturado - nomina - gastosRec, caja: recibido - nomina - gastosRec };
+    return { facturado, recibido, porCobrar: facturado - recibido, nomina: nominaTotal, nominaPagada, gastos: gastosRec, entradas, saldo: facturado - nominaTotal - gastosRec };
+  }
+  const totMes = () => totals(S.pagos, S.gastos, S.nomina);
+  const totPrev = () => S.prev ? totals(S.prev.pagos, S.prev.gastos, S.prev.nomina) : null;
+
+  // Avatar de la persona (o sus iniciales si no tiene ilustración)
+  function avatar(p, size) {
+    const st = { width: size + 'px', height: size + 'px' };
+    if (p.avatar && A.equipo[p.avatar]) return h('img', { class: 'fin-av', src: A.equipo[p.avatar], alt: '', style: st });
+    const ini = (p.nombre || '?').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+    return h('span', { class: 'fin-av ini', style: Object.assign({ fontSize: Math.round(size * 0.34) + 'px' }, st) }, ini);
   }
 
   /* =====================================================================
@@ -202,7 +234,7 @@
   /* =====================================================================
      ESTRUCTURA PRINCIPAL
      ===================================================================== */
-  const TABS = [['meses', 'ME', 'Meses'], ['resumen', 'RS', 'Resumen'], ['pagos', 'PG', 'Pagos'], ['gastos', 'GS', 'Gastos'], ['clientes', 'CL', 'Clientes']];
+  const TABS = [['meses', 'ME', 'Meses'], ['resumen', 'RS', 'Resumen'], ['pagos', 'PG', 'Pagos'], ['gastos', 'GS', 'Gastos'], ['nomina', 'NO', 'Nómina'], ['clientes', 'CL', 'Clientes']];
   const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   async function refresh() {
@@ -220,7 +252,8 @@
         h('div', null, h('p', { class: 'eyebrow' }, 'Finanzas Brandgo'), h('h1', { class: 'q fin-title' }, '¿Qué vas a registrar hoy?')),
         h('div', { class: 'fin-quick' },
           h('button', { type: 'button', class: 'fin-qa pay', onclick: () => openPago() }, h('b', null, 'PG'), h('span', null, h('strong', null, 'Registrar pago'), h('small', null, 'Un cliente pagó'))),
-          h('button', { type: 'button', class: 'fin-qa exp', onclick: () => openGasto() }, h('b', null, 'GS'), h('span', null, h('strong', null, 'Registrar gasto'), h('small', null, 'Salió dinero'))))),
+          h('button', { type: 'button', class: 'fin-qa exp', onclick: () => openGasto() }, h('b', null, 'GS'), h('span', null, h('strong', null, 'Registrar gasto'), h('small', null, 'Salió dinero'))),
+          h('button', { type: 'button', class: 'fin-qa nom', onclick: () => openNomina() }, h('b', null, 'NO'), h('span', null, h('strong', null, 'Pagar nómina'), h('small', null, 'Quincena o mes completo'))))),
       h('div', { class: 'fin-bar' },
         h('nav', { class: 'fin-tabs', 'aria-label': 'Secciones' }, TABS.map(([k, ab, lb]) => h('button', { type: 'button', class: S.tab === k ? 'on' : '', 'aria-current': S.tab === k ? 'page' : null, onclick: () => { S.tab = k; render(); } }, h('b', null, ab), lb))),
         h('div', { class: 'fin-month' },
@@ -229,7 +262,7 @@
           h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Mes siguiente', onclick: () => { S.mes = addMonths(S.mes, 1); refresh(); } }, '›'))));
     const body = h('div', { class: 'fin-body' + (S.anim ? ' animate' : '') });
     app.append(body);
-    (({ meses: viewMeses, resumen: viewResumen, pagos: viewPagos, gastos: viewGastos, clientes: viewClientes })[S.tab] || viewMeses)(body);
+    (({ meses: viewMeses, resumen: viewResumen, pagos: viewPagos, gastos: viewGastos, nomina: viewNomina, clientes: viewClientes })[S.tab] || viewMeses)(body);
     // Escalonar la entrada de cada bloque y animar cifras y medidores
     let i = 0;
     body.querySelectorAll('.fin-rise').forEach(el => el.style.setProperty('--i', i++));
@@ -284,6 +317,7 @@
       const b = get(g.mes);
       if (g.categoria === 'nomina' || g.categoria === 'extra') b.nomina += Number(g.valor) || 0; else b.otros += Number(g.valor) || 0;
     });
+    S.all.nomina.forEach(n => { get(n.mes).nomina += Number(n.valor) || 0; });
     S.metas.forEach(m => get(m.mes));
     get(monthOf(todayISO()));
     return Object.values(by).map(b => Object.assign(b, { neto: b.facturado - b.nomina - b.otros, meta: metaDe(b.mes) })).sort((a, b) => b.mes.localeCompare(a.mes));
@@ -381,11 +415,11 @@
   }
 
   function viewResumen(body) {
-    const t = totals(S.pagos, S.gastos);
-    const tp = S.prev ? totals(S.prev.pagos, S.prev.gastos) : null;
-    const has = (S.prev && (S.prev.pagos.length || S.prev.gastos.length));
+    const t = totMes();
+    const tp = totPrev();
+    const has = (S.prev && (S.prev.pagos.length || S.prev.gastos.length || S.prev.nomina.length));
     const ml = monthLabel(S.mes);
-    if (!S.pagos.length && !S.gastos.length) {
+    if (!S.pagos.length && !S.gastos.length && !S.nomina.length) {
       body.append(h('div', { class: 'block fin-empty fin-rise' }, h('h3', null, `Aún no hay movimientos en ${ml}`),
         h('p', { class: 'help' }, 'Registra el primer pago o gasto con los botones de arriba. También puedes generar los cobros de los clientes de marketing mensual desde Pagos.')));
       return;
@@ -394,8 +428,8 @@
       ['Facturado', t.facturado, tp && has ? delta(t.facturado, tp.facturado) : null, `${S.pagos.length} cobros del mes`],
       ['Recibido', t.recibido, null, `${t.facturado ? Math.round(t.recibido / t.facturado * 100) : 0}% de lo facturado`],
       ['Por cobrar', t.porCobrar, null, `${S.pagos.filter(p => estado(p) !== 'pagado').length} clientes con saldo`],
-      ['Nómina', t.nomina, tp && has ? delta(t.nomina, tp.nomina, true) : null, 'Incluye servicios extra'],
-      ['Gastos en recursos', t.gastos, tp && has ? delta(t.gastos, tp.gastos, true) : null, `${S.gastos.filter(g => g.categoria !== 'nomina' && g.categoria !== 'extra' && g.movimiento !== 'entrada').length} gastos`]
+      ['Nómina', t.nomina, tp && has ? delta(t.nomina, tp.nomina, true) : null, S.nomina.length ? `${S.nomina.filter(n => estado(n) === 'pagado').length} de ${S.nomina.length} personas pagadas` : 'Incluye servicios extra'],
+      ['Gastos en recursos', t.gastos, tp && has ? delta(t.gastos, tp.gastos, true) : null, `${S.gastos.filter(g => !esNominaGasto(g) && g.movimiento !== 'entrada').length} gastos`]
     ];
     body.append(h('div', { class: 'fin-sum-head fin-rise' },
       h('div', null, h('h2', { class: 'fin-h2' }, 'Resumen de ' + ml), h('p', { class: 'help' }, 'Saldo neto = facturado − nómina − gastos en recursos. Los préstamos que entran a Brandgo no cuentan como gasto.')),
@@ -410,7 +444,7 @@
 
     // Ingresos por categoría
     const ingRows = Object.entries(CAT_ING).map(([k, c]) => { const ps = S.pagos.filter(p => p.categoria === k); return { label: c.label, abbr: c.abbr, color: c.color, value: ps.reduce((s, p) => s + Number(p.valor), 0), sub: ps.length + (ps.length === 1 ? ' cobro' : ' cobros') }; });
-    const gasRows = Object.entries(CAT_GAS).map(([k, c]) => ({ label: c.label, abbr: c.abbr, color: c.color, value: S.gastos.filter(g => g.categoria === k && g.movimiento !== 'entrada').reduce((s, g) => s + Number(g.valor), 0) })).filter(r => r.value > 0).sort((a, b) => b.value - a.value);
+    const gasRows = Object.entries(CAT_GAS).map(([k, c]) => ({ label: c.label, abbr: c.abbr, color: c.color, value: S.gastos.filter(g => g.categoria === k && g.movimiento !== 'entrada').reduce((s, g) => s + Number(g.valor), 0) + S.nomina.filter(n => n.tipo === k).reduce((s, n) => s + Number(n.valor), 0) })).filter(r => r.value > 0).sort((a, b) => b.value - a.value);
     const porEstado = Object.keys(ESTADOS).map(e => { const ps = S.pagos.filter(p => estado(p) === e); return { e, n: ps.length, v: ps.reduce((s, p) => s + Number(p.valor) - pagado(p), 0), tot: ps.reduce((s, p) => s + Number(p.valor), 0) }; });
     const pend = S.pagos.filter(p => estado(p) !== 'pagado').sort((a, b) => (Number(b.valor) - pagado(b)) - (Number(a.valor) - pagado(a)));
 
@@ -419,6 +453,8 @@
       h('section', { class: 'block fin-rise' }, h('h3', null, 'Gastos por categoría'), h('p', { class: 'fin-cap' }, 'Incluye nómina; sin préstamos recibidos'), gasRows.length ? barChart(gasRows, t.gastos + t.nomina, { single: true }) : h('p', { class: 'help' }, 'Sin gastos este mes.')),
       h('section', { class: 'block fin-rise' }, h('h3', null, 'Estado de los cobros'),
         h('div', { class: 'fin-states' }, porEstado.map(x => h('div', { class: 'fin-state' }, estadoChip(x.e), h('b', null, x.n), h('small', null, x.e === 'pagado' ? money(x.tot) + ' cobrados' : money(x.v) + ' por cobrar'))))),
+      S.nomina.length ? h('section', { class: 'block fin-rise' }, h('h3', null, 'Estado de la nómina'), h('p', { class: 'fin-cap' }, money(t.nominaPagada) + ' pagados de ' + money(t.nomina)),
+        h('div', { class: 'fin-team-mini' }, S.nomina.slice().sort((a, b) => personaDe(a).nombre.localeCompare(personaDe(b).nombre)).map(n => { const e = estado(n); return h('button', { type: 'button', class: 'fin-tm ' + ESTADOS[e].cls, title: personaDe(n).nombre + ' · ' + ESTADOS[e].label, onclick: () => { S.tab = 'nomina'; render(); } }, avatar(personaDe(n), 52), h('b', null, personaDe(n).nombre.split(' ')[0]), h('small', null, avance(n) + '%')); }))) : null,
       h('section', { class: 'block fin-rise' }, h('h3', null, 'Quién falta por pagar'),
         pend.length ? h('div', { class: 'fin-list' }, pend.slice(0, 8).map(p => h('div', { class: 'fin-li' }, chipAbbr(p.categoria, CAT_ING), h('span', { class: 'n' }, clienteDe(p).nombre), h('span', { class: 'a' }, avance(p) + '%'), h('b', null, money(Number(p.valor) - pagado(p))),
           h('button', { type: 'button', class: 'btn small', onclick: () => openPago({ cliente_id: p.cliente_id }) }, 'Abonar'))))
@@ -494,13 +530,11 @@
      GASTOS (tabla)
      ===================================================================== */
   function viewGastos(body) {
-    const prevNomina = (S.prev ? S.prev.gastos : []).filter(g => g.categoria === 'nomina');
-    const tieneNomina = S.gastos.some(g => g.categoria === 'nomina');
     body.append(h('div', { class: 'fin-tools fin-rise' },
       h('h2', { class: 'fin-h2' }, 'Gastos de ' + monthLabel(S.mes)),
-      !tieneNomina && prevNomina.length ? h('button', { type: 'button', class: 'btn', onclick: () => copiarNomina(prevNomina) }, `+ Copiar nómina de ${monthLabel(addMonths(S.mes, -1)).split(' ')[0].toLowerCase()} (${prevNomina.length})`) : null));
+      h('button', { type: 'button', class: 'btn', onclick: () => { S.tab = 'nomina'; render(); } }, 'La nómina está en su propia sección →')));
     if (!S.gastos.length) { body.append(h('div', { class: 'block fin-empty fin-rise' }, h('h3', null, 'Sin gastos este mes'), h('p', { class: 'help' }, 'Usa "Registrar gasto" para el primero.'))); return; }
-    const groups = [['Gastos en recursos', S.gastos.filter(g => g.categoria !== 'nomina' && g.categoria !== 'extra')], ['Nómina', S.gastos.filter(g => g.categoria === 'nomina' || g.categoria === 'extra')]];
+    const groups = [['Gastos en recursos', S.gastos.filter(g => !esNominaGasto(g))], ['Nómina registrada como gasto (formato anterior)', S.gastos.filter(esNominaGasto)]];
     groups.forEach(([title, list]) => {
       if (!list.length) return;
       const tot = list.filter(g => g.movimiento !== 'entrada').reduce((s, g) => s + Number(g.valor), 0);
@@ -516,11 +550,175 @@
     });
   }
 
-  async function copiarNomina(list) {
+  /* =====================================================================
+     NÓMINA (equipo y pagos por abonos)
+     ===================================================================== */
+  const lastDay = mes => { const [y, m] = mes.split('-').map(Number); return `${y}-${pad(m)}-${pad(new Date(y, m, 0).getDate())}`; };
+  const dayOf = (mes, d) => { const [y, m] = mes.split('-').map(Number); return `${y}-${pad(m)}-${pad(Math.min(d || 15, new Date(y, m, 0).getDate()))}`; };
+
+  function viewNomina(body) {
+    if (S.nominaMissing) {
+      body.append(h('div', { class: 'block fin-notice fin-rise' }, h('h3', null, 'Falta activar la nómina'),
+        h('p', { class: 'help' }, 'Corre el archivo supabase/nomina.sql en Supabase → SQL Editor. Crea el equipo, pasa la nómina de octubre a este nuevo formato y activa el registro por abonos.')));
+      return;
+    }
+    const activos = S.equipo.filter(e => e.activo);
+    const faltan = activos.filter(e => !S.nomina.some(n => n.persona_id === e.id));
+    const tot = S.nomina.reduce((s, n) => s + Number(n.valor), 0), pag = S.nomina.reduce((s, n) => s + pagado(n), 0);
+    const pagadas = S.nomina.filter(n => estado(n) === 'pagado').length;
+    body.append(h('div', { class: 'fin-sum-head fin-rise' },
+      h('div', null, h('h2', { class: 'fin-h2' }, 'Nómina de ' + monthLabel(S.mes)), h('p', { class: 'help' }, 'Se paga en lo posible el 15 de cada mes, por quincenas: 50% y luego el resto. Toca una persona para registrar su pago.')),
+      h('div', { class: 'fin-row-btns' },
+        faltan.length ? h('button', { type: 'button', class: 'btn', onclick: () => generarNomina(faltan) }, `+ Agregar ${faltan.length} ${faltan.length === 1 ? 'persona' : 'personas'} a este mes`) : null,
+        h('button', { type: 'button', class: 'btn primary', onclick: () => openNomina() }, 'Pagar nómina'))));
+    if (S.nomina.length) {
+      body.append(h('div', { class: 'fin-nom-sum fin-rise' },
+        h('div', null, h('span', null, 'Pagado'), counted(pag)), h('div', null, h('span', null, 'Total del mes'), h('b', null, money(tot))),
+        h('div', null, h('span', null, 'Pendiente'), h('b', null, money(Math.max(0, tot - pag)))),
+        h('div', { class: 'grow' }, h('span', null, `${pagadas} de ${S.nomina.length} personas al día`), h('div', { class: 'fin-prog big' }, growBar(tot ? pag / tot * 100 : 0)))));
+    } else {
+      body.append(h('div', { class: 'block fin-empty fin-rise' }, h('h3', null, 'Aún no hay nómina en ' + monthLabel(S.mes)),
+        h('p', { class: 'help' }, activos.length ? 'Agrega al equipo a este mes con el botón de arriba, o registra directamente un pago.' : 'Primero agrega a las personas del equipo con su salario, más abajo.')));
+    }
+    if (S.nomina.length) body.append(h('div', { class: 'fin-people' }, S.nomina.slice().sort((a, b) => personaDe(a).nombre.localeCompare(personaDe(b).nombre)).map(n => {
+      const p = personaDe(n), e = estado(n), av = avance(n);
+      return h('article', { class: 'fin-person fin-rise ' + ESTADOS[e].cls, tabindex: 0, role: 'button', 'aria-label': 'Pagar a ' + p.nombre,
+        onclick: ev => { if (ev.target.closest('button')) return; if (e !== 'pagado') openNomina({ persona_id: n.persona_id }); else openNominaEdit(n); },
+        onkeydown: ev => { if (ev.key === 'Enter' && ev.target === ev.currentTarget) ev.currentTarget.click(); } },
+        h('div', { class: 'fin-person-h' }, h('div', { class: 'fin-av-wrap' }, avatar(p, 64), h('i', { class: 'dot ' + ESTADOS[e].cls })),
+          h('div', null, h('b', null, p.nombre), h('small', null, p.rol || TIPO_NOM[n.tipo].label))),
+        h('div', { class: 'fin-person-v' }, h('span', null, money(pagado(n)), h('small', null, ' de ' + money(n.valor))), estadoChip(e)),
+        h('div', { class: 'fin-prog big' }, growBar(av)),
+        h('div', { class: 'fin-abonos' }, (n.abonos || []).length ? n.abonos.map(a => h('span', null, dateShort(a.fecha) + ' · ' + money(a.valor))) : h('span', { class: 'fin-muted' }, 'Sin pagos todavía')),
+        h('div', { class: 'fin-person-f' },
+          e !== 'pagado' ? h('button', { type: 'button', class: 'btn small primary', onclick: () => openNomina({ persona_id: n.persona_id }) }, pagado(n) ? 'Pagar lo que falta' : 'Pagar 50%') : null,
+          h('button', { type: 'button', class: 'btn small', onclick: () => openNominaEdit(n) }, 'Editar'),
+          rowActions('nomina', n, [])));
+    })));
+    // Equipo
+    body.append(h('div', { class: 'fin-tools fin-rise', style: { marginTop: '30px' } }, h('h2', { class: 'fin-h2' }, 'Equipo'),
+      h('button', { type: 'button', class: 'btn', onclick: () => openPersona() }, '+ Persona')));
+    if (!S.equipo.length) { body.append(h('p', { class: 'help fin-rise' }, 'Agrega a cada persona con su salario mensual.')); return; }
+    body.append(h('div', { class: 'fin-team fin-rise' }, S.equipo.map(p => h('button', { type: 'button', class: 'fin-team-p' + (p.activo ? '' : ' off'), onclick: () => openPersona(p) },
+      avatar(p, 40), h('span', null, h('b', null, p.nombre), h('small', null, (p.activo ? '' : 'Inactivo · ') + TIPO_NOM[p.tipo].label + ' · ' + money(p.salario) + (p.dia_pago ? ' · día ' + p.dia_pago : '')))))));
+  }
+
+  async function generarNomina(list) {
     try {
-      await store.insertMany('gastos', list.map(g => ({ concepto: g.concepto, categoria: 'nomina', movimiento: 'salida', valor: Number(g.valor), mes: S.mes, fecha: S.mes, notas: g.notas || null })));
-      toast('Nómina copiada; ajusta valores y fechas si cambiaron'); await refresh();
-    } catch (e) { console.error(e); toast('No se pudo copiar la nómina'); }
+      await store.insertMany('nomina', list.map(p => ({ persona_id: p.id, mes: S.mes, tipo: p.tipo, valor: Number(p.salario) || 0, abonos: [] })));
+      toast(`${list.length} ${list.length === 1 ? 'persona agregada' : 'personas agregadas'} como pendientes`); await refresh();
+    } catch (e) { console.error(e); toast('No se pudo agregar la nómina'); }
+  }
+
+  function openNomina(pre) {
+    if (S.nominaMissing) { toast('Primero corre supabase/nomina.sql en Supabase'); return; }
+    if (!S.equipo.length) { openPersona(); toast('Primero agrega a una persona del equipo'); return; }
+    pre = pre || {};
+    const f = { persona_id: pre.persona_id || '', mes: S.mes, modo: null, abono: 0, fecha: '' };
+    const errEl = h('div', { class: 'fin-err', role: 'alert' });
+    const info = h('div', { class: 'fin-info' });
+    const amountBox = h('div');
+    const persona = () => S.equipo.find(p => p.id === f.persona_id);
+    const registro = () => S.nomina.find(n => n.persona_id === f.persona_id && n.mes === f.mes) || null;
+    const fechaIn = h('input', { type: 'date', class: 'field', id: 'n-fecha', onchange: e => { f.fecha = e.target.value; } });
+    function draw() {
+      amountBox.innerHTML = ''; info.innerHTML = '';
+      const p = persona(); if (!p) { info.append(h('span', null, 'Elige a quién le vas a pagar.')); return; }
+      const r = registro();
+      const total = r ? Number(r.valor) : Number(p.salario) || 0;
+      const ya = r ? pagado(r) : 0, falta = Math.max(0, total - ya);
+      // Fecha sugerida: el día de pago (15) para la primera quincena, fin de mes para la segunda
+      if (!f.fechaTocada) { f.fecha = ya > 0 ? lastDay(f.mes) : dayOf(f.mes, p.dia_pago || 15); fechaIn.value = f.fecha; }
+      const opts = ya > 0 ? [['falta', 'Lo que falta · ' + money(falta)], ['otro', 'Otro valor']] : [['50', '50% · ' + money(Math.round(total / 2))], ['100', '100% · ' + money(total)], ['otro', 'Otro valor']];
+      if (!f.modo || !opts.some(o => o[0] === f.modo)) f.modo = opts[0][0];
+      const setVal = () => { f.abono = f.modo === 'falta' ? falta : f.modo === '50' ? Math.round(total / 2) : f.modo === '100' ? total : f.abono; drawInfo(); };
+      const otro = h('div', { style: { marginTop: '10px' } });
+      const drawOtro = () => { otro.innerHTML = ''; if (f.modo === 'otro') otro.append(lbl('Valor pagado', 'n-abono', moneyInput('n-abono', f.abono, v => { f.abono = v; drawInfo(); }))); };
+      amountBox.append(h('span', { class: 'label' }, '¿Cuánto se le paga?'),
+        h('div', { class: 'fin-cats' }, opts.map(([k, l]) => h('button', { type: 'button', class: 'fin-cat', 'aria-checked': f.modo === k ? 'true' : 'false', onclick: e => { e.currentTarget.parentNode.querySelectorAll('.fin-cat').forEach(b => b.setAttribute('aria-checked', b === e.currentTarget ? 'true' : 'false')); f.modo = k; setVal(); drawOtro(); } }, l))), otro);
+      setVal(); drawOtro();
+      function drawInfo() {
+        info.innerHTML = '';
+        const nuevo = ya + (Number(f.abono) || 0);
+        const e = nuevo <= 0 ? 'pendiente' : nuevo >= total ? 'pagado' : 'proceso';
+        info.append(h('span', null, r ? `${p.nombre} lleva ${money(ya)} de ${money(total)} en ${monthLabel(f.mes)}.` : `Salario de ${p.nombre}: ${money(total)} en ${monthLabel(f.mes)}.`),
+          h('span', { class: 'fin-info-st' }, 'Quedará: ', estadoChip(e), ' ', total ? Math.min(100, Math.round(nuevo / total * 100)) + '%' : ''));
+      }
+    }
+    const picker = h('div', { class: 'fin-pick', role: 'radiogroup', 'aria-label': 'Persona' }, S.equipo.filter(p => p.activo || p.id === f.persona_id).map(p => {
+      const r = S.nomina.find(n => n.persona_id === p.id && n.mes === f.mes);
+      const st = r ? estado(r) : 'pendiente';
+      return h('button', { type: 'button', role: 'radio', class: 'fin-pick-p', 'aria-checked': f.persona_id === p.id ? 'true' : 'false', onclick: e => { f.persona_id = p.id; f.modo = null; f.fechaTocada = false; picker.querySelectorAll('.fin-pick-p').forEach(b => b.setAttribute('aria-checked', b === e.currentTarget ? 'true' : 'false')); draw(); } },
+        h('div', { class: 'fin-av-wrap' }, avatar(p, 48), h('i', { class: 'dot ' + ESTADOS[st].cls })), h('b', null, p.nombre.split(' ')[0]), h('small', null, ESTADOS[st].label));
+    }));
+    fechaIn.addEventListener('change', () => { f.fechaTocada = true; });
+    const mesIn = h('input', { type: 'month', class: 'field', id: 'n-mes', value: f.mes.slice(0, 7), onchange: async e => { if (!e.target.value) return; f.mes = e.target.value + '-01'; if (f.mes !== S.mes) { S.mes = f.mes; await load(); render(); } f.modo = null; f.fechaTocada = false; draw(); } });
+    const content = h('div', { class: 'stack' }, h('div', null, h('span', { class: 'label' }, '¿A quién?'), picker),
+      h('div', { class: 'grid2' }, lbl('Mes de la nómina', 'n-mes', mesIn), lbl('Fecha del pago', 'n-fecha', fechaIn)), amountBox, info, errEl);
+    draw();
+    const save = h('button', { type: 'button', class: 'btn primary huge', onclick: async () => {
+      errEl.textContent = '';
+      const p = persona(); if (!p) { errEl.textContent = 'Elige a quién le vas a pagar.'; return; }
+      const abono = Number(f.abono) || 0; if (abono <= 0) { errEl.textContent = 'Escribe cuánto se le paga.'; return; }
+      if (!f.fecha) { errEl.textContent = 'Elige la fecha del pago.'; return; }
+      busy(save, 'Guardando…');
+      try {
+        const r = registro(); const ab = [{ fecha: f.fecha, valor: abono }];
+        if (r) await store.update('nomina', r.id, { abonos: (r.abonos || []).concat(ab) });
+        else await store.insert('nomina', { persona_id: p.id, mes: f.mes, tipo: p.tipo, valor: Number(p.salario) || abono, abonos: ab });
+        closeSheet(); toast('Pago de nómina registrado para ' + p.nombre.split(' ')[0]); await refresh();
+      } catch (e) { console.error(e); errEl.textContent = 'No se pudo guardar. Revisa tu conexión e intenta de nuevo.'; unbusy(save); }
+    } }, 'Guardar pago');
+    openSheet('Pagar nómina', 'Por quincenas: el 50% el día 15 y el resto después. Si ya tiene un pago este mes, se suma.', content, [h('button', { type: 'button', class: 'btn', onclick: closeSheet }, 'Cancelar'), save], 'verde');
+  }
+
+  function openNominaEdit(n) {
+    const p = personaDe(n);
+    const f = { valor: Number(n.valor), abonos: (n.abonos || []).map(a => Object.assign({}, a)) };
+    const list = h('div', { class: 'stack', style: { gap: '8px' } });
+    const drawList = () => {
+      list.innerHTML = '';
+      if (!f.abonos.length) list.append(h('p', { class: 'help' }, 'Sin pagos: queda pendiente.'));
+      f.abonos.forEach((a, i) => list.append(h('div', { class: 'fin-abono' }, h('input', { type: 'date', class: 'field', value: a.fecha || '', 'aria-label': 'Fecha del pago', onchange: e => { a.fecha = e.target.value; } }), moneyInput('na-' + i, a.valor, v => { a.valor = v; }), h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Quitar pago', onclick: () => { f.abonos.splice(i, 1); drawList(); } }, '✕'))));
+    };
+    drawList();
+    const content = h('div', { class: 'stack' },
+      lbl('Valor de la nómina este mes', 'ne-valor', moneyInput('ne-valor', f.valor, v => { f.valor = v; })),
+      h('div', null, h('span', { class: 'label' }, 'Pagos'), list, h('button', { type: 'button', class: 'add-line', style: { marginTop: '8px' }, onclick: () => { f.abonos.push({ fecha: todayISO(), valor: 0 }); drawList(); } }, '+ Agregar pago')));
+    const save = h('button', { type: 'button', class: 'btn primary huge', onclick: async () => {
+      busy(save, 'Guardando…');
+      try { await store.update('nomina', n.id, { valor: f.valor, abonos: f.abonos.filter(a => Number(a.valor) > 0) }); closeSheet(); toast('Nómina actualizada'); await refresh(); }
+      catch (e) { console.error(e); toast('No se pudo guardar'); unbusy(save); }
+    } }, 'Guardar cambios');
+    openSheet('Nómina · ' + p.nombre, monthLabel(n.mes), content, [h('button', { type: 'button', class: 'btn', onclick: closeSheet }, 'Cancelar'), save], 'verde');
+  }
+
+  function openPersona(p) {
+    if (S.nominaMissing) { toast('Primero corre supabase/nomina.sql en Supabase'); return; }
+    const edit = !!p;
+    const f = Object.assign({ nombre: '', rol: '', avatar: null, tipo: 'nomina', salario: 0, dia_pago: 15, activo: true }, p || {});
+    const errEl = h('div', { class: 'fin-err', role: 'alert' });
+    const nom = h('input', { class: 'field big', id: 'pe-nombre', placeholder: 'Nombre completo', oninput: e => { f.nombre = e.target.value; } }); nom.value = f.nombre;
+    const rol = h('input', { class: 'field', id: 'pe-rol', placeholder: 'Ej. Estrategia', oninput: e => { f.rol = e.target.value; } }); rol.value = f.rol || '';
+    const dia = h('input', { class: 'field', id: 'pe-dia', type: 'number', min: 1, max: 31, oninput: e => { f.dia_pago = e.target.value; } }); dia.value = f.dia_pago || '';
+    const avs = h('div', { class: 'fin-pick', role: 'radiogroup', 'aria-label': 'Avatar' }, [['', 'Iniciales'], ...Object.entries(AVATARS)].map(([k, l]) =>
+      h('button', { type: 'button', role: 'radio', class: 'fin-pick-p', 'aria-checked': (f.avatar || '') === k ? 'true' : 'false', onclick: e => { f.avatar = k || null; avs.querySelectorAll('.fin-pick-p').forEach(b => b.setAttribute('aria-checked', b === e.currentTarget ? 'true' : 'false')); } },
+        avatar({ avatar: k || null, nombre: f.nombre || l }, 44), h('small', null, l))));
+    const content = h('div', { class: 'stack' }, lbl('Nombre', 'pe-nombre', nom), h('div', { class: 'grid2' }, lbl('Rol', 'pe-rol', rol, true), lbl('Día de pago', 'pe-dia', dia)),
+      h('div', null, h('span', { class: 'label' }, 'Avatar'), avs),
+      h('div', null, h('span', { class: 'label' }, 'Tipo'), catPicker(TIPO_NOM, f.tipo, k => { f.tipo = k; })),
+      lbl('Salario mensual', 'pe-salario', moneyInput('pe-salario', f.salario, v => { f.salario = v; })),
+      h('label', { class: 'switch' }, h('input', { type: 'checkbox', checked: f.activo, onchange: e => { f.activo = e.target.checked; } }), 'Activo en la nómina'), errEl);
+    const actions = [h('button', { type: 'button', class: 'btn', onclick: closeSheet }, 'Cancelar')];
+    const save = h('button', { type: 'button', class: 'btn primary huge', onclick: async () => {
+      if (!f.nombre.trim()) { errEl.textContent = 'Escribe el nombre.'; return; }
+      busy(save, 'Guardando…');
+      const row = { nombre: f.nombre.trim(), rol: (f.rol || '').trim() || null, avatar: f.avatar || null, tipo: f.tipo, salario: f.salario || 0, dia_pago: f.dia_pago ? Number(f.dia_pago) : null, activo: f.activo };
+      try { if (edit) await store.update('equipo', p.id, row); else await store.insert('equipo', row); closeSheet(); toast(edit ? 'Persona actualizada' : 'Persona agregada'); await refresh(); }
+      catch (e) { console.error(e); errEl.textContent = 'No se pudo guardar.'; unbusy(save); }
+    } }, edit ? 'Guardar cambios' : 'Agregar persona');
+    actions.push(save);
+    openSheet(edit ? 'Editar persona' : 'Nueva persona', 'Su salario mensual se usa para calcular el 50% y lo que falta.', content, actions, 'verde');
   }
 
   /* =====================================================================
@@ -726,7 +924,7 @@
     const notas = h('input', { class: 'field', id: 'g-notas', oninput: e => { f.notas = e.target.value; } }); notas.value = f.notas || '';
     const content = h('div', { class: 'stack' },
       lbl('¿En qué se gastó?', 'g-concepto', con),
-      h('div', null, h('span', { class: 'label' }, 'Categoría'), catPicker(CAT_GAS, f.categoria, k => { f.categoria = k; drawMov(); })),
+      h('div', null, h('span', { class: 'label' }, 'Categoría'), catPicker(CAT_GAS_PICK, f.categoria, k => { f.categoria = k; drawMov(); })),
       movBox,
       h('div', { class: 'grid2' }, lbl('Valor', 'g-valor', moneyInput('g-valor', f.valor, v => { f.valor = v; })), lbl('Fecha', 'g-fecha', fecha)),
       h('div', { class: 'grid2' }, lbl('Mes al que se carga', 'g-mes', mes), lbl('Nota', 'g-notas', notas, true)),
@@ -779,7 +977,7 @@
      ===================================================================== */
   const PAGE = { w: 816, h: 1056 };
   function reportBlocks() {
-    const t = totals(S.pagos, S.gastos);
+    const t = totMes();
     const ml = monthLabel(S.mes);
     const out = [];
     const sign = v => (v < 0 ? '−' : '') + money(Math.abs(v));
@@ -802,12 +1000,13 @@
     const pagos = S.pagos.slice().sort((a, b) => clienteDe(a).nombre.localeCompare(clienteDe(b).nombre));
     if (pagos.length) out.push(table('Ingresos de clientes', ['Cliente', 'Categoría', 'Avance', 'Estado', { label: 'Recibido', num: true }, { label: 'Valor', num: true }],
       pagos.map(p => [clienteDe(p).nombre, CAT_ING[p.categoria].label, avance(p) + '%', ESTADOS[estado(p)].label, money(pagado(p)), money(p.valor)]), money(t.facturado), 'azul'));
-    const rec = S.gastos.filter(g => g.categoria !== 'nomina' && g.categoria !== 'extra');
+    const rec = S.gastos.filter(g => !esNominaGasto(g));
     if (rec.length) out.push(table('Gastos en recursos', ['Concepto', 'Categoría', 'Fecha', { label: 'Valor', num: true }],
       rec.map(g => [g.concepto + (g.movimiento === 'entrada' ? ' (entra)' : ''), CAT_GAS[g.categoria].label, dateShort(g.fecha), (g.movimiento === 'entrada' ? '+' : '') + money(g.valor)]), money(t.gastos), 'naranja'));
-    const nom = S.gastos.filter(g => g.categoria === 'nomina' || g.categoria === 'extra');
-    if (nom.length) out.push(table('Nómina', ['Persona', 'Categoría', { label: 'Valor', num: true }],
-      nom.map(g => [g.concepto, CAT_GAS[g.categoria].label, money(g.valor)]), money(t.nomina), 'verde'));
+    const nomRows = S.nomina.slice().sort((a, b) => personaDe(a).nombre.localeCompare(personaDe(b).nombre))
+      .map(n => [personaDe(n).nombre, TIPO_NOM[n.tipo].label, ESTADOS[estado(n)].label, money(pagado(n)), money(n.valor)])
+      .concat(S.gastos.filter(esNominaGasto).map(g => [g.concepto, CAT_GAS[g.categoria].label, 'Pagado', money(g.valor), money(g.valor)]));
+    if (nomRows.length) out.push(table('Nómina', ['Persona', 'Tipo', 'Estado', { label: 'Pagado', num: true }, { label: 'Valor', num: true }], nomRows, money(t.nomina), 'verde'));
     return out;
   }
   function newPage(n) {

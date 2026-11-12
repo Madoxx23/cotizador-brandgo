@@ -34,16 +34,18 @@ Todo se guarda solo en el navegador de cada persona (borrador, datos de quien co
 
 ## 3. Finanzas de la agencia (`finanzas.html`) — acceso restringido
 Solo entra quien tenga una cuenta autorizada (correo y contraseña). Los datos viven en Supabase, protegidos por reglas de acceso de la base de datos; ver **FINANZAS-SEGURIDAD.md** para configurarlo.
-- **Accesos rápidos:** Registrar pago (PG) y Registrar gasto (GS).
+- **Meses:** primera vista. Balance de cada mes en tarjetas (facturado, nómina, otros gastos y neto) con su meta de facturación y un anillo de avance.
+- **Accesos rápidos:** Registrar pago (PG), Registrar gasto (GS) y Pagar nómina (NO).
 - **Pagos:** un cobro por cliente y mes, con abonos (50% + 50%, o lo que pague). El estado se calcula solo: Pagado, En proceso o Pendiente. Botón para generar los cobros del mes de todos los clientes de marketing mensual.
-- **Gastos:** categorías con abreviatura — GH gasto hormiga, SE servicios, IN insumos, PR préstamo, AL alquiler, EQ equipos, SU suscripción, NO nómina, SX servicio extra. Los préstamos pueden salir o entrar a Brandgo; los que entran no cuentan como gasto. Botón para copiar la nómina del mes anterior.
+- **Gastos:** categorías con abreviatura — GH gasto hormiga, SE servicios, IN insumos, PR préstamo, AL alquiler, EQ equipos, SU suscripción. Los préstamos pueden salir o entrar a Brandgo; los que entran no cuentan como gasto.
+- **Nómina:** cada persona del equipo con su avatar, salario y estado del mes. Se paga por quincenas (50% el día 15 y el resto después); el estado se calcula solo. Botón para agregar a todo el equipo al mes.
 - **Clientes:** perfil con categoría (MM marketing mensual, CP campaña, SV servicio), valor y día de pago.
 - **Resumen:** saldo neto (facturado − nómina − gastos), lo recibido, lo que falta por cobrar, gráficas por categoría y exportación a PDF.
 
 ## Para el equipo técnico
 - `index.html`: inicio. `styles.css`: estilos compartidos (web, diapositivas y documento).
 - `app.js`: cotizador. `cobro.js`: cuentas de cobro. `finanzas.js`: finanzas. `common.js`: utilidades compartidas y número a letras.
-- `supabase/finanzas.sql`: tablas y reglas de acceso. `finanzas-config.js`: URL y clave pública de Supabase. `vercel.json`: cabeceras de seguridad.
+- `supabase/finanzas.sql`: tablas y reglas de acceso. `supabase/metas.sql` y `supabase/nomina.sql`: actualizaciones para el proyecto ya creado. `finanzas-config.js`: URL y clave pública de Supabase. `vercel.json`: cabeceras de seguridad.
 - Para probar Finanzas en local sin base de datos: `http://localhost:<puerto>/finanzas.html?demo` (solo funciona en localhost).
 - Si cambias fotos en `assets/`, regenera `assets.js` con `node build-assets.js`.
 - Cada cambio que se sube a `main` se publica solo en Vercel.
