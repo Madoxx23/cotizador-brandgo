@@ -1,6 +1,6 @@
 /* Guiones de rodaje — Brandgo
    Cuentas (clientes) → guiones → checklist técnico por ubicación y en orden del video.
-   El texto del guion se estructura con Claude en /api/guion (la clave vive en Vercel).
+   El guion se escribe con etiquetas (UBICACIÓN:, ENTREVISTA:, TOMA:…) y se arma en el navegador, sin costo.
    Acceso abierto para el equipo (sin cuenta); en la base no se puede borrar, solo archivar. */
 (function () {
   'use strict';
@@ -20,6 +20,7 @@
   const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
   const fecha = iso => { if (!iso) return ''; const d = new Date(iso); return `${d.getDate()} ${MESES[d.getMonth()]} ${d.getFullYear()}`; };
   const pal = c => PALETTES[c] || PALETTES.azul;
+  const plural = (n, a, b) => n + ' ' + (n === 1 ? a : b);
   const pv = p => ({ '--c': p.ac, '--c-bg': p.bg, '--c-bd': p.bd });
 
   /* =====================================================================
@@ -57,7 +58,6 @@
     }).catch(() => {});
     const listeners = {};
     return {
-      demoEstructura: () => fetch('/__scratch/demo-guion.json').then(r => r.json()),
       async cuentas() { await ready; return db.guion_cuentas.filter(c => !c.archivada); },
       async cuenta(cid) { await ready; return db.guion_cuentas.find(c => c.id === cid) || null; },
       async resumenGuiones() { await ready; return db.guiones.filter(g => !g.archivado); },
@@ -89,7 +89,7 @@
 
   async function route() {
     if (stopLive) { stopLive(); stopLive = null; }
-    closeSheet(); document.body.classList.remove("gui-rodaje"); const hl = $("#homeLink"); if (hl) hl.hidden = false;
+    closeSheet(); app.classList.remove("wide"); document.body.classList.remove("gui-rodaje"); const hl = $("#homeLink"); if (hl) hl.hidden = false;
     const q = Q();
     if (!db) return viewSetup();
     try {
@@ -196,7 +196,7 @@
     app.append(
       h('div', { class: 'gui-head' },
         h('div', null, h('p', { class: 'eyebrow' }, 'Guiones de rodaje'), h('h1', { class: 'q' }, '¿En qué cuenta vas a trabajar?'),
-          h('p', { class: 'help' }, 'Cada cuenta es un cliente. Adentro creas sus guiones: pegas el texto y la IA lo convierte en un checklist de rodaje.')),
+          h('p', { class: 'help' }, 'Cada cuenta es un cliente. Adentro creas sus guiones: escribes el guion con etiquetas y se convierte en un checklist de rodaje.')),
         h('button', { type: 'button', class: 'btn primary', onclick: () => openCuenta() }, icon('plus'), 'Nueva cuenta')),
       h('div', { class: 'gui-tools' }, search),
       grid);
@@ -241,7 +241,7 @@
           h('button', { type: 'button', class: 'btn primary', onclick: () => go({ nuevo: c.id }) }, icon('plus'), 'Nuevo guion'))));
     if (!gs.length) {
       app.append(h('button', { type: 'button', class: 'gui-new gui-rise', style: pv(p), onclick: () => go({ nuevo: c.id }) },
-        h('img', { src: A.icons.hoja, alt: '' }), h('b', null, 'Crea el primer guion'), h('span', null, 'Pega el texto y la IA arma el checklist de rodaje.')));
+        h('img', { src: A.icons.hoja, alt: '' }), h('b', null, 'Crea el primer guion'), h('span', null, 'Escribe el guion con etiquetas y se arma el checklist de rodaje.')));
       return;
     }
     app.append(h('div', { class: 'gui-scripts' }, gs.map((g, i) => {
@@ -254,93 +254,315 @@
     })));
   }
 
-  /* ---------- Crear o editar un guion con IA ---------- */
+  /* =====================================================================
+     ETIQUETAS: el guion se escribe con etiquetas al inicio de la línea
+     (UBICACIÓN: …, ENTREVISTA: …, TOMA: …). Todo se arma en el navegador, gratis.
+     ===================================================================== */
+  const ETIQUETAS = [
+    { k: 'ubicacion',  label: 'Ubicación',  color: 'verde',    g: 'Dónde y qué', alias: ['ubicacion', 'locacion', 'lugar', 'spot', 'set'], help: 'Dónde se graba. Todo lo que sigue queda en esa ubicación.' },
+    { k: 'entrevista', label: 'Entrevista', color: 'rosa',     g: 'Dónde y qué', alias: ['entrevista', 'entrevistado', 'testimonio'], help: 'Quién habla a cámara. Cada FRASE debajo es una toma.' },
+    { k: 'toma',       label: 'Toma',       color: 'azul',     g: 'Dónde y qué', alias: ['toma', 'escena', 'apoyo', 'toma de apoyo'], help: 'Toma de apoyo que va en el video. Se numera sola.' },
+    { k: 'montaje',    label: 'Montaje',    color: 'verde',    g: 'Dónde y qué', alias: ['montaje', 'b-roll', 'broll', 'secuencia'], help: 'Secuencia o montaje de varias tomas.' },
+    { k: 'cierre',     label: 'Cierre',     color: 'violeta',  g: 'Dónde y qué', alias: ['cierre', 'final', 'end card'], help: 'Final del video: logo, lema, llamado.' },
+    { k: 'extra',      label: 'Extra',      color: 'amarillo', g: 'Dónde y qué', alias: ['extra', 'toma extra', 'adicional', 'respaldo'], help: 'Toma de respaldo. No entra en el orden del video.' },
+    { k: 'plano',      label: 'Plano',      color: 'turquesa', g: 'Detalle de la toma', alias: ['plano', 'camara', 'encuadre'], help: 'Encuadre o movimiento de cámara de la toma de arriba.' },
+    { k: 'frase',      label: 'Frase',      color: 'rosa',     g: 'Detalle de la toma', alias: ['frase', 'cita', 'dice', 'dialogo'], help: 'Lo que dice la persona entrevistada.' },
+    { k: 'nota',       label: 'Nota',       color: 'naranja',  g: 'Detalle de la toma', alias: ['nota', 'produccion', 'ojo', 'importante'], help: 'Nota de producción: utilería, luz, vestuario.' },
+    { k: 'titulo',     label: 'Título',     color: 'azul',     g: 'Datos del guion', alias: ['titulo'], help: 'Título del guion (opcional si ya lo escribiste arriba).' },
+    { k: 'lema',       label: 'Lema',       color: 'rosa',     g: 'Datos del guion', alias: ['lema', 'concepto', 'claim'], help: 'Frase del concepto. La *palabra* entre asteriscos se resalta.' },
+    { k: 'protagonistas', label: 'Protagonistas', color: 'violeta', g: 'Datos del guion', alias: ['protagonistas', 'talento', 'personajes', 'reparto'], help: 'Nombres separados por coma.' },
+    { k: 'regla',      label: 'Regla',      color: 'verde',    g: 'Datos del guion', alias: ['regla', 'indicacion'], help: 'Indicación general de rodaje: «Título — explicación».' },
+    { k: 'evitar',     label: 'Evitar',     color: 'rosa',     g: 'Datos del guion', alias: ['evitar', 'no hacer', 'prohibido'], help: 'Algo que no debe pasar en el rodaje.' }
+  ];
+  const ETQ = Object.fromEntries(ETIQUETAS.map(t => [t.k, t]));
+  const sinTilde = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+  const ALIAS = {}; ETIQUETAS.forEach(t => t.alias.forEach(a => { ALIAS[a] = t.k; }));
+  const RE_TAG = /^\s*(?:\[\s*([^\]]{2,24}?)\s*\]\s*:?|([A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ \-]{1,22}?)\s*:)\s*(.*)$/;
+  function leerEtiqueta(linea) {
+    const m = linea.match(RE_TAG); if (!m) return null;
+    const k = ALIAS[sinTilde(m[1] || m[2])];
+    return k ? { k, valor: m[3].trim() } : null;
+  }
+  const TIPO_DE = { entrevista: 'entrevista', toma: 'apoyo', montaje: 'montaje', cierre: 'cierre', extra: 'apoyo' };
+
+  function parseGuion(texto, opts) {
+    const lineas = texto.split(/\r?\n/), filas = [], momentos = [], reglas = [], prota = [];
+    const e = { titulo: '', cliente: '', lema: '', lema_resaltado: '' };
+    let loc = '', cur = null;
+    const nuevo = (k, titulo) => { cur = { id: '', tipo: TIPO_DE[k], numero: '', titulo, plano: '', locacion: loc, cita: '', texto: '', nota: '', en_video: k !== 'extra' }; momentos.push(cur); return cur; };
+    lineas.forEach((raw, n) => {
+      const t = raw.trim(); if (!t) return;
+      const tag = leerEtiqueta(t);
+      if (!tag) {
+        if (cur) { cur.texto = cur.texto ? cur.texto + ' ' + t : t; filas.push({ n, rol: 'desc', texto: t }); }
+        else filas.push({ n, rol: 'libre', texto: t, aviso: 'Sin etiqueta: esta línea no se usa' });
+        return;
+      }
+      const { k, valor } = tag, fila = { n, k, texto: valor };
+      filas.push(fila);
+      if (k === 'ubicacion') { loc = valor; cur = null; if (!valor) fila.aviso = 'Escribe el nombre del lugar'; }
+      else if (TIPO_DE[k]) {
+        nuevo(k, valor || (k === 'entrevista' ? 'Entrevista' : ETQ[k].label));
+        if (!loc) fila.aviso = 'Sin ubicación: agrega UBICACIÓN antes';
+        if (k === 'entrevista' && !valor) fila.aviso = 'Escribe quién habla';
+      } else if (k === 'plano' || k === 'frase' || k === 'nota') {
+        if (!cur) { fila.aviso = 'Va debajo de una toma o entrevista'; return; }
+        if (k === 'plano') cur.plano = valor;
+        if (k === 'nota') cur.nota = cur.nota ? cur.nota + ' ' + valor : valor;
+        if (k === 'frase') {
+          const limpia = valor.replace(/^["“«]+|["”»]+$/g, '');
+          if (cur.tipo === 'entrevista' && cur.cita) { const prev = cur; nuevo('entrevista', prev.titulo); cur.plano = prev.plano; cur.locacion = prev.locacion; }
+          cur.cita = cur.cita ? cur.cita + ' ' + limpia : limpia;
+        }
+      } else if (k === 'titulo' || k === 'cliente') e[k] = valor;
+      else if (k === 'lema') { const hl = valor.match(/\*([^*]+)\*/); e.lema = valor.replace(/\*/g, ''); e.lema_resaltado = hl ? hl[1] : ''; }
+      else if (k === 'protagonistas') valor.split(/\s*(?:,|;|\sy\s)\s*/).filter(Boolean).forEach(x => prota.push(x));
+      else if (k === 'regla' || k === 'evitar') {
+        const [a, ...b] = valor.split(/\s+[—–-]\s+|:\s+/);
+        reglas.push({ titulo: b.length ? a : (k === 'evitar' ? 'Evitar' : 'Indicación'), texto: b.length ? b.join(' — ') : a, evitar: k === 'evitar' });
+      }
+    });
+    // Numeración como en el piloto: E entrevistas, 01… tomas del video, B montaje, F cierre, + extras
+    let nTomas = 0;
+    momentos.forEach((m, i) => {
+      m.id = 'm' + (i + 1);
+      m.numero = m.tipo === 'entrevista' ? 'E' : m.tipo === 'montaje' ? 'B' : m.tipo === 'cierre' ? 'F' : m.en_video ? String(++nTomas).padStart(2, '0') : '+';
+    });
+    // Plan por ubicación: primero cada entrevista completa, luego las tomas de cada lugar
+    const bloques = [], vistos = {};
+    momentos.filter(m => m.tipo === 'entrevista').forEach(m => {
+      const key = m.titulo + '|' + m.locacion;
+      if (!vistos[key]) { vistos[key] = { nombre: `Entrevista de ${m.titulo}${m.locacion ? ' · ' + m.locacion : ''}`, descripcion: 'Toda la entrevista en el mismo spot.', ids: [] }; bloques.push(vistos[key]); }
+      vistos[key].ids.push(m.id);
+    });
+    const locs = [...new Set(momentos.map(m => m.locacion))];
+    locs.forEach(l => {
+      const ids = momentos.filter(m => m.tipo !== 'entrevista' && m.locacion === l).map(m => m.id);
+      if (ids.length) bloques.push({ nombre: (l || 'Sin ubicación') + ' · tomas', descripcion: '', ids });
+    });
+    bloques.forEach((b, i) => { b.nombre = `${i + 1} · ${b.nombre}`; });
+    const personas = prota.length ? prota : [...new Set(momentos.filter(m => m.tipo === 'entrevista').map(m => m.titulo))];
+    return {
+      filas,
+      estructura: { titulo: e.titulo || opts.titulo || '', cliente: e.cliente || opts.cliente || '', lema: e.lema, lema_resaltado: e.lema_resaltado, protagonistas: personas, locaciones: locs.filter(Boolean), reglas, momentos, bloques }
+    };
+  }
+
+  // Asistente: propone etiquetas para las líneas que no tienen
+  function sugerirEtiqueta(t) {
+    const s = sinTilde(t);
+    let m;
+    if ((m = t.match(/^(?:ubicaci[oó]n|locaci[oó]n|lugar|spot|set)\b[\s.:\-–—]*(.*)$/i))) return ['ubicacion', m[1]];
+    if ((m = t.match(/^(?:int|ext|int\/ext)\.\s*(.*)$/i))) return ['ubicacion', m[1]];
+    if ((m = t.match(/entrevista(?:\s+(?:a|de|con))?\s*[:\-–—]?\s*(.+)$/i))) return ['entrevista', m[1]];
+    if (/^["“«]/.test(t)) return ['frase', t];
+    if ((m = t.match(/^(?:escena|toma)\s*\d*\s*[.:\-–—)]*\s*(.*)$/i))) return ['toma', m[1]];
+    if ((m = t.match(/^(?:montaje|b-?roll|secuencia)\s*[.:\-–—]*\s*(.*)$/i))) return ['montaje', m[1]];
+    if ((m = t.match(/^(?:cierre|final|end ?card)\s*[.:\-–—]*\s*(.*)$/i))) return ['cierre', m[1] || t];
+    if ((m = t.match(/^(?:nota|ojo|importante)\s*[.:\-–—]*\s*(.*)$/i))) return ['nota', m[1]];
+    if (t.length < 90 && /\b(plano|primer plano|close ?up|cenital|dron|drone|gimbal|travelling|paneo|camara (?:fija|en mano|lenta)|slow ?motion)\b/.test(s)) return ['plano', t];
+    if ((m = t.match(/^\d{1,2}\s*[.)\-–—]\s*(.+)$/))) return ['toma', m[1]];
+    return null;
+  }
+
+  const PLANTILLA = [
+    'TÍTULO: Disciplina, el lujo de cuidarte',
+    'LEMA: La *disciplina* también es un lujo',
+    'PROTAGONISTAS: Valentina, Sara',
+    'REGLA: Plano medio — Entrevistas a la altura de los ojos, mirando al entrevistador.',
+    'EVITAR: Logos de otras marcas — Nada de ropa o empaques con marcas visibles.',
+    '',
+    'UBICACIÓN: Edificio San Juan',
+    'ENTREVISTA: Valentina',
+    'PLANO: Medio, de lado',
+    'FRASE: Para mí, la disciplina es un regalo que me hago.',
+    'FRASE: Nadie me obliga; lo elijo cada mañana.',
+    '',
+    'TOMA: Valentina se amarra los tenis',
+    'PLANO: Detalle, cámara baja',
+    'Se ve el amanecer por la ventana.',
+    'NOTA: Llevar luz cálida de apoyo.',
+    '',
+    'UBICACIÓN: Parque principal',
+    'TOMA: Trota hacia la cámara',
+    'MONTAJE: Secuencia de entrenamiento, cortes rápidos',
+    'CIERRE: Logo y lema final',
+    'EXTRA: Fachada del edificio desde el dron'
+  ].join('\n');
+
+  /* ---------- Crear o editar un guion con el asistente de etiquetas ---------- */
   async function viewEditor(cid, gid) {
     const existente = gid ? await db.guion(gid) : null;
     const cuentaId = existente ? existente.cuenta_id : cid;
     const c = await db.cuenta(cuentaId);
     if (!c) { go({}); return; }
     setTop(existente ? 'Editar guion' : 'Nuevo guion', c.nombre, () => (existente ? go({ g: gid }) : go({ cuenta: c.id })));
+    app.classList.add('wide');
     const p = pal(c.color);
-    const f = { titulo: existente ? existente.titulo : '', autor: existente ? (existente.autor || '') : '', texto: existente ? (existente.texto || '') : '', estructura: existente ? existente.estructura : null };
+    const f = { titulo: existente ? existente.titulo : '', autor: existente ? (existente.autor || '') : '', texto: existente ? (existente.texto || '') : '', estructura: null };
+    let lectura = parseGuion(f.texto, { titulo: f.titulo, cliente: c.nombre });
     app.innerHTML = '';
     const err = h('div', { class: 'fin-err', role: 'alert' });
     const count = h('small', { class: 'gui-count' });
-    const updCount = () => { count.textContent = `${f.texto.length.toLocaleString('es-CO')} / ${MAX_CHARS.toLocaleString('es-CO')} caracteres`; count.classList.toggle('over', f.texto.length > MAX_CHARS); };
-    const ta = h('textarea', { class: 'area gui-text', id: 'gs-texto', placeholder: 'Pega aquí el guion completo: escenas, frases de las entrevistas, locaciones, indicaciones de cámara…', oninput: e => { f.texto = e.target.value; updCount(); } });
-    ta.value = f.texto; updCount();
+    const ta = h('textarea', { class: 'area gui-text', id: 'gs-texto', spellcheck: 'true', placeholder: 'Escribe o pega el guion. Empieza cada línea con una etiqueta:\n\nUBICACIÓN: Edificio San Juan\nENTREVISTA: Valentina\nFRASE: Para mí, la disciplina es un regalo.\nTOMA: Se amarra los tenis\nPLANO: Detalle, cámara baja' });
+    ta.value = f.texto;
     const titulo = h('input', { class: 'field big', id: 'gs-titulo', placeholder: 'Ej. Disciplina, el lujo de cuidarte', value: f.titulo, oninput: e => { f.titulo = e.target.value; } });
     const otros = h('input', { class: 'field', id: 'gs-autor', placeholder: 'Otro nombre', value: TEAM.some(t => t.nombre === f.autor) ? '' : f.autor, oninput: e => { f.autor = e.target.value; chips.querySelectorAll('.fin-cat').forEach(b => b.setAttribute('aria-checked', 'false')); } });
     const chips = h('div', { class: 'fin-cats', role: 'radiogroup', 'aria-label': 'Quién lo escribió' }, TEAM.map(t => h('button', { type: 'button', role: 'radio', class: 'fin-cat', 'aria-checked': f.autor === t.nombre ? 'true' : 'false',
       onclick: e => { f.autor = t.nombre; otros.value = ''; chips.querySelectorAll('.fin-cat').forEach(b => b.setAttribute('aria-checked', b === e.currentTarget ? 'true' : 'false')); } },
       h('img', { src: A.equipo[t.id], alt: '', class: 'gui-av' }), t.nombre)));
     const preview = h('div');
-    const genBtn = h('button', { type: 'button', class: 'btn primary huge gui-gen', onclick: generar }, icon('sparkle'), f.estructura ? 'Volver a generar con IA' : 'Generar checklist con IA');
+    const panel = h('div', { class: 'gui-read-list' });
+    const resumen = h('div', { class: 'gui-read-sum' });
+    const autoBtn = h('button', { type: 'button', class: 'btn small', onclick: autoEtiquetar }, icon('sparkle'), 'Etiquetar por mí');
+    const genBtn = h('button', { type: 'button', class: 'btn primary huge gui-gen', onclick: armar }, icon('check'), 'Armar checklist');
     const saveBtn = h('button', { type: 'button', class: 'btn primary huge', onclick: guardar }, existente ? 'Guardar cambios' : 'Guardar guion');
+
+    // ----- Escribir en el textarea sin perder el deshacer del navegador cuando se puede
+    function setTexto(v, cursor) {
+      ta.focus(); ta.select();
+      const ok = document.execCommand && document.execCommand('insertText', false, v);
+      if (!ok || ta.value !== v) ta.value = v;
+      if (cursor != null) ta.setSelectionRange(cursor, cursor);
+      onTexto();
+    }
+    function lineaActual() {
+      const v = ta.value, pos = ta.selectionStart;
+      const ini = v.lastIndexOf('\n', pos - 1) + 1, finIdx = v.indexOf('\n', pos), fin = finIdx < 0 ? v.length : finIdx;
+      return { v, ini, fin, linea: v.slice(ini, fin) };
+    }
+    function ponerEtiqueta(k) {
+      const { v, ini, fin, linea } = lineaActual();
+      const actual = leerEtiqueta(linea.trim());
+      const resto = actual ? actual.valor : linea.trim();
+      const nueva = ETQ[k].label.toUpperCase() + ': ' + resto;
+      // Si la línea tiene texto se reemplaza su etiqueta; si el cursor está en una línea con etiqueta distinta y vacía, igual
+      const v2 = v.slice(0, ini) + nueva + v.slice(fin);
+      setTexto(v2, ini + nueva.length);
+    }
+    function irALinea(n) {
+      const ls = ta.value.split('\n'); let pos = 0;
+      for (let i = 0; i < n; i++) pos += ls[i].length + 1;
+      ta.focus(); ta.setSelectionRange(pos, pos + (ls[n] || '').length);
+      const lh = parseFloat(getComputedStyle(ta).lineHeight) || 22; ta.scrollTop = Math.max(0, n * lh - ta.clientHeight / 3);
+      if (window.matchMedia('(max-width: 900px)').matches) ta.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    function autoEtiquetar() {
+      let cambios = 0;
+      const out = ta.value.split('\n').map(l => {
+        const t = l.trim(); if (!t || leerEtiqueta(t)) return l;
+        const s = sugerirEtiqueta(t); if (!s) return l;
+        cambios++; return ETQ[s[0]].label.toUpperCase() + ': ' + s[1].trim();
+      }).join('\n');
+      if (!cambios) { toast('No encontré líneas para etiquetar. Usa los botones de etiqueta.'); return; }
+      setTexto(out, 0); toast(`${cambios} ${cambios === 1 ? 'línea etiquetada' : 'líneas etiquetadas'}. Revisa la lectura.`);
+    }
+
+    // ----- Lectura en vivo: cómo entiende el asistente cada línea
+    function drawLectura() {
+      const fl = lectura.filas, est = lectura.estructura, m = metricas({ estructura: est, checks: {} });
+      const avisos = fl.filter(x => x.aviso).length;
+      resumen.innerHTML = '';
+      resumen.append(
+        h('span', { class: 'gui-pill', style: pv(pal('rosa')) }, plural(m.entrevistas, 'entrevista', 'entrevistas')),
+        h('span', { class: 'gui-pill', style: pv(pal('azul')) }, plural(m.total, 'toma', 'tomas')),
+        h('span', { class: 'gui-pill', style: pv(pal('verde')) }, plural(m.locaciones, 'ubicación', 'ubicaciones')),
+        avisos ? h('span', { class: 'gui-pill warn' }, `${avisos} por revisar`) : (m.total ? h('span', { class: 'gui-pill ok' }, 'Todo en orden') : null));
+      panel.innerHTML = '';
+      if (!fl.length) {
+        panel.append(h('div', { class: 'gui-read-empty' }, h('b', null, 'Aquí verás cómo se lee tu guion'), h('span', null, 'Cada línea con su etiqueta. Si algo queda sin etiqueta te avisamos.'),
+          h('button', { type: 'button', class: 'btn small', onclick: () => setTexto(PLANTILLA, 0) }, 'Usar un ejemplo')));
+        return;
+      }
+      fl.forEach(x => {
+        const t = x.k ? ETQ[x.k] : null;
+        panel.append(h('button', { type: 'button', class: 'gui-read' + (x.aviso ? ' warn' : '') + (x.rol === 'desc' ? ' desc' : '') + (t && TIPO_DE[x.k] ? ' item' : ''), onclick: () => irALinea(x.n), title: 'Ir a la línea' },
+          h('span', { class: 'gui-read-tag', style: t ? pv(pal(t.color)) : null }, t ? t.label : (x.rol === 'desc' ? 'Descripción' : 'Sin etiqueta')),
+          h('span', { class: 'gui-read-txt' }, x.texto || '—', x.aviso ? h('small', null, x.aviso) : null)));
+      });
+    }
+    let tmr = null;
+    function onTexto() {
+      f.texto = ta.value;
+      count.textContent = `${f.texto.length.toLocaleString('es-CO')} / ${MAX_CHARS.toLocaleString('es-CO')} caracteres`;
+      count.classList.toggle('over', f.texto.length > MAX_CHARS);
+      clearTimeout(tmr);
+      tmr = setTimeout(() => { lectura = parseGuion(f.texto, { titulo: f.titulo, cliente: c.nombre }); drawLectura(); if (f.estructura) armar(true); }, 140);
+    }
+    ta.addEventListener('input', onTexto);
 
     function drawPreview() {
       preview.innerHTML = '';
       if (!f.estructura) return;
       const e = f.estructura, m = metricas({ estructura: e, checks: {} });
-      preview.append(h('div', { class: 'block gui-preview gui-rise', style: pv(p) },
-        h('div', { class: 'gui-preview-h' }, h('span', { class: 'gui-ok' }, icon('check')), h('div', null, h('b', null, 'Checklist listo'), h('small', null, 'Revísalo y guárdalo. Después puedes editar cada toma.'))),
+      preview.append(h('div', { class: 'block gui-preview', style: pv(p) },
+        h('div', { class: 'gui-preview-h' }, h('span', { class: 'gui-ok' }, icon('check')), h('div', null, h('b', null, 'Checklist listo'), h('small', null, 'Así queda el plan de rodaje. Guárdalo y después puedes editar cada toma.'))),
         h('div', { class: 'gui-stats' }, [[m.escenas, 'escenas', 'azul'], [m.entrevistas, 'entrevistas', 'rosa'], [m.locaciones, 'locaciones', 'verde'], [m.protagonistas, 'protagonistas', 'violeta']].map(([n, l, col]) => h('div', { class: 'gui-stat', style: pv(pal(col)) }, h('b', null, n), h('span', null, l)))),
         h('div', { class: 'gui-plan' }, (e.bloques || []).map(b => h('div', null, h('b', null, b.nombre), h('span', null, `${b.ids.length} ${b.ids.length === 1 ? 'toma' : 'tomas'}`)))),
         h('div', { class: 'gui-row end' }, saveBtn)));
     }
 
-    async function generar() {
+    function armar(silencioso) {
       err.textContent = '';
-      if (f.texto.trim().length < 40) { err.textContent = 'Pega el guion completo antes de generar.'; return; }
+      lectura = parseGuion(f.texto, { titulo: f.titulo, cliente: c.nombre });
+      const est = lectura.estructura;
+      if (!est.momentos.length) { f.estructura = null; drawPreview(); if (silencioso !== true) err.textContent = 'No hay tomas todavía. Usa ENTREVISTA, TOMA, MONTAJE o CIERRE al inicio de cada línea, o toca «Etiquetar por mí».'; return; }
       if (f.texto.length > MAX_CHARS) { err.textContent = 'El guion es muy largo. Divídelo en partes.'; return; }
-      busy(genBtn, 'Leyendo el guion…');
-      const pasos = ['Leyendo el guion…', 'Separando entrevistas y tomas…', 'Armando el plan por ubicación…', 'Revisando los detalles…'];
-      let k = 0; const t = setInterval(() => { k = (k + 1) % pasos.length; genBtn.textContent = pasos[k]; }, 4500);
-      preview.innerHTML = '';
-      preview.append(h('div', { class: 'block gui-loading' }, h('span', { class: 'gui-spin' }), h('div', null, h('b', null, 'La IA está leyendo tu guion'), h('small', null, 'Puede tardar entre 20 segundos y un minuto.'))));
-      try {
-        let estructura;
-        if (isDemo) { await new Promise(r => setTimeout(r, 1200)); estructura = await db.demoEstructura(); }
-        else {
-          const r = await fetch('/api/guion', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texto: f.texto, titulo: f.titulo, cliente: c.nombre }) });
-          const data = await r.json().catch(() => ({}));
-          if (!r.ok) throw new Error(data.error || 'No se pudo procesar el guion.');
-          estructura = data.estructura;
-        }
-        f.estructura = estructura;
-        if (!f.titulo.trim() && estructura.titulo) { f.titulo = estructura.titulo; titulo.value = f.titulo; }
-        drawPreview();
-        preview.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      } catch (e) { console.error(e); preview.innerHTML = ''; err.textContent = e.message || 'No se pudo procesar el guion.'; }
-      finally { clearInterval(t); unbusy(genBtn); genBtn.lastChild && (genBtn.textContent = ''); genBtn.append(icon('sparkle'), 'Volver a generar con IA'); }
+      f.estructura = est;
+      if (!f.titulo.trim() && est.titulo) { f.titulo = est.titulo; titulo.value = f.titulo; }
+      drawPreview();
+      if (silencioso !== true) preview.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
     async function guardar() {
       err.textContent = '';
+      armar(true);
       if (!f.titulo.trim()) { err.textContent = 'Escribe el título del guion.'; titulo.focus(); return; }
-      if (!f.estructura) { err.textContent = 'Primero genera el checklist.'; return; }
+      if (!f.estructura) { err.textContent = 'Primero arma el checklist.'; return; }
       busy(saveBtn, 'Guardando…');
       const row = { titulo: f.titulo.trim().slice(0, 160), autor: (f.autor || '').trim().slice(0, 80) || null, texto: f.texto.slice(0, 60000), estructura: f.estructura };
       try {
         if (existente) {
-          const ids = new Set((f.estructura.momentos || []).map(x => x.id));
-          const checks = Object.fromEntries(Object.entries(existente.checks || {}).filter(([k]) => ids.has(k)));
+          // Las marcas se conservan si la toma sigue igual (mismo título y tipo)
+          const prev = Object.fromEntries((existente.estructura.momentos || []).map(x => [x.id, x]));
+          const firma = x => x.tipo + '|' + x.titulo + '|' + x.cita;
+          const marcadas = new Set(Object.keys(existente.checks || {}).filter(k => prev[k]).map(k => firma(prev[k])));
+          const checks = {}; f.estructura.momentos.forEach(x => { if (marcadas.has(firma(x))) checks[x.id] = true; });
           await db.update('guiones', existente.id, Object.assign(row, { checks })); toast('Guion actualizado'); go({ g: existente.id });
         } else { const r = await db.insert('guiones', Object.assign(row, { cuenta_id: c.id })); toast('Guion guardado'); go({ g: r.id }); }
       } catch (e) { console.error(e); err.textContent = 'No se pudo guardar. Revisa tu conexión.'; unbusy(saveBtn); }
     }
 
+    // Barra de etiquetas: tocar una pone esa etiqueta en la línea donde está el cursor
+    const grupos = [...new Set(ETIQUETAS.map(t => t.g))];
+    const barra = h('div', { class: 'gui-tagbar', role: 'toolbar', 'aria-label': 'Etiquetas' },
+      ETIQUETAS.filter(t => t.g !== 'Datos del guion').map(t => h('button', { type: 'button', class: 'gui-tagbtn', style: pv(pal(t.color)), title: t.help,
+        onmousedown: ev => ev.preventDefault(), onclick: () => ponerEtiqueta(t.k) }, t.label)),
+      h('details', { class: 'gui-tagmore' }, h('summary', null, 'Más'),
+        h('div', null, ETIQUETAS.filter(t => t.g === 'Datos del guion').map(t => h('button', { type: 'button', class: 'gui-tagbtn', style: pv(pal(t.color)), title: t.help,
+          onmousedown: ev => ev.preventDefault(), onclick: ev => { ponerEtiqueta(t.k); ev.currentTarget.closest('details').open = false; } }, t.label)))));
+    const guia = h('details', { class: 'gui-guide' }, h('summary', null, '¿Cómo funcionan las etiquetas?'),
+      h('p', { class: 'help' }, 'Cada línea empieza con una etiqueta y dos puntos. Las líneas sin etiqueta debajo de una toma se vuelven su descripción. Pon el cursor en una línea y toca una etiqueta para ponérsela.'),
+      grupos.map(g => h('div', { class: 'gui-guide-g' }, h('b', null, g), ETIQUETAS.filter(t => t.g === g).map(t => h('div', { class: 'gui-guide-r' }, h('span', { class: 'gui-read-tag', style: pv(pal(t.color)) }, t.label.toUpperCase() + ':'), h('span', null, t.help))))));
+
     app.append(
       h('div', { class: 'gui-head', style: pv(p) }, h('div', null,
         h('button', { type: 'button', class: 'gui-back', onclick: () => (existente ? go({ g: gid }) : go({ cuenta: c.id })) }, '‹ ' + (existente ? 'Volver al guion' : c.nombre)),
         h('h1', { class: 'q' }, existente ? 'Editar guion' : 'Nuevo guion'),
-        h('p', { class: 'help' }, 'Pega el guion tal como lo escribiste. La IA lo convierte en un guion técnico: entrevistas, tomas de apoyo, montajes y el plan de rodaje por ubicación.'))),
+        h('p', { class: 'help' }, 'Escribe el guion con etiquetas (UBICACIÓN, ENTREVISTA, TOMA…). El asistente lo lee en vivo y arma el plan de rodaje por ubicación.'))),
       h('div', { class: 'stack gui-form', style: pv(p) },
         h('div', { class: 'block' }, lbl('Título del guion', 'gs-titulo', titulo),
           h('div', null, h('span', { class: 'label' }, '¿Quién lo escribió?'), chips, h('div', { style: { marginTop: '8px' } }, otros))),
-        h('div', { class: 'block' }, h('div', { class: 'gui-text-h' }, h('label', { class: 'label', for: 'gs-texto' }, 'Guion'), count), ta, err, genBtn),
+        h('div', { class: 'gui-compose' },
+          h('div', { class: 'block gui-write' },
+            h('div', { class: 'gui-text-h' }, h('label', { class: 'label', for: 'gs-texto' }, 'Guion'), h('div', { class: 'gui-row' }, count, autoBtn)),
+            barra, ta, guia),
+          h('aside', { class: 'block gui-reader' },
+            h('div', { class: 'gui-text-h' }, h('span', { class: 'label' }, 'Así se lee'), resumen), panel)),
+        h('div', { class: 'gui-actions' }, err, genBtn),
         preview));
-    drawPreview();
+    onTexto(); clearTimeout(tmr); drawLectura();
+    if (existente) armar(true);
   }
 
   /* ---------- El guion: checklist de rodaje ---------- */

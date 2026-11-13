@@ -793,14 +793,16 @@
     groups.forEach(([title, list]) => {
       if (!list.length) return;
       const tot = list.filter(g => g.movimiento !== 'entrada').reduce((s, g) => s + Number(g.valor), 0);
-      body.append(h('h3', { class: 'fin-h3 fin-rise' }, title, h('span', null, list.length + (list.length === 1 ? ' gasto · ' : ' gastos · ') + money(tot))));
+      const pend = list.filter(g => estGasto(g) === 'pendiente' && g.movimiento !== 'entrada');
+      body.append(h('h3', { class: 'fin-h3 fin-rise' }, title, h('span', null, list.length + (list.length === 1 ? ' gasto · ' : ' gastos · ') + money(tot) + (pend.length ? ` · ${pend.length} por pagar (${money(pend.reduce((s, g) => s + Number(g.valor), 0))})` : ''))));
       body.append(h('div', { class: 'fin-table-wrap fin-rise' }, h('table', { class: 'fin-table t-gastos' },
-        h('thead', null, h('tr', null, selHead(list.map(g => g.id)), ...['Concepto', 'Categoría', 'Fecha', 'Valor', ''].map((c, i) => h('th', { class: i === 3 ? 'num' : '' }, c)))),
+        h('thead', null, h('tr', null, selHead(list.map(g => g.id)), ...['Concepto', 'Categoría', 'Fecha', 'Estado', 'Valor', ''].map((c, i) => h('th', { class: i === 4 ? 'num' : '' }, c)))),
         h('tbody', null, list.map(g => h('tr', { class: S.sel.has(g.id) ? 'picked' : '' },
           selCell(g.id),
           h('td', { class: 'name' }, h('b', null, g.concepto), g.movimiento === 'entrada' ? h('small', null, 'Entra a Brandgo · no suma como gasto') : (g.notas ? h('small', null, g.notas) : null), autor(g)),
           h('td', null, chip(g.categoria, CAT_GAS)),
           h('td', null, dateBubble(g.fecha)),
+          h('td', { class: 'st' }, h('button', { type: 'button', class: 'fin-st-btn', title: estGasto(g) === 'pagado' ? 'Marcar como pendiente' : 'Marcar como pagado', onclick: () => toggleGasto(g) }, estadoChip(estGasto(g)))),
           h('td', { class: 'num strong' }, (g.movimiento === 'entrada' ? '+' : '') + money(g.valor)),
           h('td', { class: 'acts' }, rowActions('gastos', g, [['Editar', () => openGasto(g)]]))))))));
     });
@@ -1166,10 +1168,23 @@
     openSheet('Editar cobro · ' + clienteDe(p).nombre, monthLabel(p.mes), content, [h('button', { type: 'button', class: 'btn', onclick: closeSheet }, 'Cancelar'), save], CAT_ING[p.categoria].color);
   }
 
+  /* ---------- Estado del gasto: pendiente o pagado ---------- */
+  const estGasto = g => (g.estado === 'pendiente' ? 'pendiente' : 'pagado');
+  const errEstado = e => /estado/i.test((e && (e.message || e.details)) || '') ? 'Falta activar el estado de gastos: corre supabase/gastos-estado.sql en Supabase.' : 'No se pudo guardar. Revisa tu conexión e intenta de nuevo.';
+  async function toggleGasto(g) {
+    const nuevo = estGasto(g) === 'pagado' ? 'pendiente' : 'pagado';
+    try { await store.update('gastos', g.id, { estado: nuevo }); toast(nuevo === 'pagado' ? 'Gasto marcado como pagado' : 'Gasto marcado como pendiente'); await refresh(); }
+    catch (e) { console.error(e); toast(errEstado(e)); }
+  }
+
   /* ---------- Registrar / editar gasto ---------- */
   function openGasto(g) {
     const edit = !!(g && g.id);
     const f = Object.assign({ concepto: '', categoria: 'hormiga', movimiento: 'salida', fecha: todayISO(), valor: 0, notas: '' }, g || {});
+    f.estado = g ? estGasto(g) : 'pagado';
+    const estBox = h('div');
+    const drawEst = () => { estBox.innerHTML = ''; estBox.append(h('span', { class: 'label' }, 'Estado'), segment([['pagado', 'Pagado'], ['pendiente', 'Pendiente']], f.estado, v => { f.estado = v; drawEst(); })); };
+    drawEst();
     if (!edit) { const t = todayISO(); f.fecha = monthOf(t) === S.mes ? t : S.mes; }
     f.mes = f.mes || monthOf(f.fecha);
     const errEl = h('div', { class: 'fin-err', role: 'alert' });
@@ -1188,6 +1203,7 @@
       lbl('¿En qué se gastó?', 'g-concepto', con),
       h('div', null, h('span', { class: 'label' }, 'Categoría'), catPicker(CAT_GAS_PICK, f.categoria, k => { f.categoria = k; drawMov(); })),
       movBox,
+      estBox,
       h('div', { class: 'grid2' }, lbl('Valor', 'g-valor', moneyInput('g-valor', f.valor, v => { f.valor = v; })), lbl('Fecha', 'g-fecha', fecha)),
       h('div', { class: 'grid2' }, lbl('Mes al que se carga', 'g-mes', mes), lbl('Nota', 'g-notas', notas, true)),
       errEl);
@@ -1198,13 +1214,13 @@
       if (!f.valor) { errEl.textContent = 'Escribe el valor.'; return; }
       if (!f.fecha) { errEl.textContent = 'Elige la fecha.'; return; }
       busy(save, 'Guardando…');
-      const row = { concepto: f.concepto.trim(), categoria: f.categoria, movimiento: f.movimiento, fecha: f.fecha, mes: f.mes, valor: f.valor, notas: (f.notas || '').trim() || null };
+      const row = { concepto: f.concepto.trim(), categoria: f.categoria, movimiento: f.movimiento, fecha: f.fecha, mes: f.mes, valor: f.valor, notas: (f.notas || '').trim() || null, estado: f.estado };
       try {
         if (edit) await store.update('gastos', g.id, row); else await store.insert('gastos', row);
         closeSheet(); toast(edit ? 'Gasto actualizado' : 'Gasto registrado');
         if (f.mes !== S.mes) S.mes = f.mes;
         await refresh();
-      } catch (e) { console.error(e); errEl.textContent = 'No se pudo guardar. Revisa tu conexión e intenta de nuevo.'; unbusy(save); }
+      } catch (e) { console.error(e); errEl.textContent = errEstado(e); unbusy(save); }
     } }, edit ? 'Guardar cambios' : 'Guardar gasto');
     openSheet(edit ? 'Editar gasto' : 'Registrar gasto', edit ? null : 'Concepto, categoría, valor y fecha. El mes se toma de la fecha.', content, [h('button', { type: 'button', class: 'btn', onclick: closeSheet }, 'Cancelar'), save], 'naranja');
   }
@@ -1275,8 +1291,8 @@
     if (pagos.length) out.push(table('Ingresos de clientes', ['Cliente', 'Categoría', 'Avance', 'Estado', { label: 'Recibido', num: true }, { label: 'Valor', num: true }],
       pagos.map(p => [clienteDe(p).nombre, CAT_ING[p.categoria].label, avance(p) + '%', ESTADOS[estado(p)].label, money(pagado(p)), money(p.valor)]), money(t.facturado), 'azul'));
     const rec = S.gastos.filter(g => !esNominaGasto(g));
-    if (rec.length) out.push(table('Gastos en recursos', ['Concepto', 'Categoría', 'Fecha', { label: 'Valor', num: true }],
-      rec.map(g => [g.concepto + (g.movimiento === 'entrada' ? ' (entra)' : ''), CAT_GAS[g.categoria].label, dateShort(g.fecha), (g.movimiento === 'entrada' ? '+' : '') + money(g.valor)]), money(t.gastos), 'naranja'));
+    if (rec.length) out.push(table('Gastos en recursos', ['Concepto', 'Categoría', 'Fecha', 'Estado', { label: 'Valor', num: true }],
+      rec.map(g => [g.concepto + (g.movimiento === 'entrada' ? ' (entra)' : ''), CAT_GAS[g.categoria].label, dateShort(g.fecha), estGasto(g) === 'pagado' ? 'Pagado' : 'Pendiente', (g.movimiento === 'entrada' ? '+' : '') + money(g.valor)]), money(t.gastos), 'naranja'));
     const nomRows = S.nomina.slice().sort((a, b) => personaDe(a).nombre.localeCompare(personaDe(b).nombre))
       .map(n => [personaDe(n).nombre, TIPO_NOM[n.tipo].label, ESTADOS[estado(n)].label, money(pagado(n)), money(n.valor)])
       .concat(S.gastos.filter(esNominaGasto).map(g => [g.concepto, CAT_GAS[g.categoria].label, 'Pagado', money(g.valor), money(g.valor)]));

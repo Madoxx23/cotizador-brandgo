@@ -37,7 +37,7 @@ Solo entra quien tenga una cuenta autorizada (correo y contraseña). Los datos v
 - **Meses:** primera vista. Balance de cada mes en tarjetas (facturado, nómina, otros gastos y neto) con su meta de facturación y un anillo de avance.
 - **Accesos rápidos:** Registrar pago, Registrar gasto y Pagar nómina, cada uno con su ícono.
 - **Pagos:** un cobro por cliente y mes, con abonos (50% + 50%, o lo que pague). El estado se calcula solo: Pagado, En proceso o Pendiente. Botón para generar los cobros del mes de todos los clientes de marketing mensual.
-- **Gastos:** categorías con abreviatura — GH gasto hormiga, SE servicios, IN insumos, PR préstamo, AL alquiler, EQ equipos, SU suscripción. Los préstamos pueden salir o entrar a Brandgo; los que entran no cuentan como gasto.
+- **Gastos:** categorías con abreviatura — GH gasto hormiga, SE servicios, IN insumos, PR préstamo, AL alquiler, EQ equipos, SU suscripción. Los préstamos pueden salir o entrar a Brandgo; los que entran no cuentan como gasto. Cada gasto tiene estado **Pagado** o **Pendiente**; se cambia tocando el estado en la tabla.
 - **Nómina:** cada persona del equipo con su avatar, salario y estado del mes. Se paga por quincenas (50% el día 15 y el resto después); el estado se calcula solo. Botón para agregar a todo el equipo al mes.
 - **Clientes:** perfil con categoría (MM marketing mensual, CP campaña, SV servicio), valor, día de pago, plan y datos para la cuenta de cobro.
 - **Apariencia:** interruptor claro, oscuro o automático en todas las páginas. Los PDF siempre salen en claro.
@@ -47,16 +47,16 @@ Solo entra quien tenga una cuenta autorizada (correo y contraseña). Los datos v
 
 ## 4. Guiones de rodaje (`guiones.html`)
 Organizados por **cuenta** (cliente). Dentro de cada cuenta están sus guiones y se crean nuevos.
-1. Se pega el guion escrito y la IA (Claude, en `api/guion.js`) lo convierte en un guion técnico: entrevistas, tomas de apoyo, montajes y cierre, agrupados por ubicación.
+1. El guion se escribe con **etiquetas** al inicio de cada línea (UBICACIÓN, ENTREVISTA, TOMA, MONTAJE, CIERRE, EXTRA, PLANO, FRASE, NOTA…). Una barra de botones pone la etiqueta en la línea del cursor, «Etiquetar por mí» propone etiquetas para un texto pegado y el panel «Así se lee» muestra en vivo cómo se entiende cada línea. Todo funciona en el navegador, sin costo.
 2. Checklist con avance en vivo: si alguien marca una toma desde otro celular, se ve al instante.
 3. **Enlace de rodaje:** versión limpia solo para marcar, para compartir con el equipo en el set.
 - Acceso abierto (sin cuenta) para el equipo; en la base no se puede borrar, solo archivar.
-- Requiere `supabase/guiones.sql` y la variable `ANTHROPIC_API_KEY` en Vercel.
+- Requiere correr `supabase/guiones.sql` en Supabase.
 
 ## Para el equipo técnico
 - `index.html`: inicio. `styles.css`: estilos compartidos (web, diapositivas y documento).
 - `app.js`: cotizador. `cobro.js`: cuentas de cobro. `finanzas.js`: finanzas. `common.js`: utilidades compartidas y número a letras.
-- `supabase/finanzas.sql`: tablas y reglas de acceso. `supabase/metas.sql`, `nomina.sql`, `avatares.sql`, `conexiones.sql` y `campanas.sql`: actualizaciones para el proyecto ya creado (en ese orden). `finanzas-config.js`: URL y clave pública de Supabase. `vercel.json`: cabeceras de seguridad.
+- `supabase/finanzas.sql`: tablas y reglas de acceso. `supabase/metas.sql`, `nomina.sql`, `avatares.sql`, `conexiones.sql` , `campanas.sql`, `guiones.sql` y `gastos-estado.sql`: actualizaciones para el proyecto ya creado (en ese orden). `finanzas-config.js`: URL y clave pública de Supabase. `vercel.json`: cabeceras de seguridad.
 - Para probar Finanzas en local sin base de datos: `http://localhost:<puerto>/finanzas.html?demo` (solo funciona en localhost).
 - Si cambias fotos en `assets/`, regenera `assets.js` con `node build-assets.cjs`.
 - Cada cambio que se sube a `main` se publica solo en Vercel.

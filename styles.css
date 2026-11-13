@@ -518,6 +518,9 @@ a.brand { text-decoration: none; color: inherit; }
 .fin-st.ok { color: #15803d; background: #eff9f2; border-color: #bfe5cb; }
 .fin-st.mid { color: #8a5a00; background: #fdf9ec; border-color: #eedfa8; }
 .fin-st.no { color: #b4233c; background: #fdf0f2; border-color: #f4c2cb; }
+.fin-st-btn { border: 0; background: none; padding: 0; border-radius: 999px; transition: transform .15s ease; }
+.fin-st-btn:hover { transform: scale(1.04); }
+.fin-st-btn:active { transform: scale(.96); }
 .fin-states { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .fin-state { border: 1px solid var(--line); border-radius: 16px; padding: 12px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; min-width: 0; }
 .fin-state b { font-size: 28px; letter-spacing: -.04em; line-height: 1; }
@@ -1188,6 +1191,7 @@ body, .block, .btn, .field, .area, .select, .topbar, .nav, .fin-table-wrap, .fin
   .t-gastos td:nth-child(3), .t-gastos td:nth-child(4) { grid-column: 2 / -1; display: inline-block; }
   .t-gastos td:nth-child(3) { grid-row: 2; }
   .t-gastos td:nth-child(4) { grid-row: 3; }
+  .t-gastos td.st { grid-column: 2 / -1; grid-row: 4; }
   /* Clientes */
   .t-clientes td:nth-child(3), .t-clientes td:nth-child(5), .t-clientes td:nth-child(6) { grid-column: 2 / -1; }
   .t-clientes td:nth-child(5):empty { display: none; }
@@ -1396,4 +1400,65 @@ body.gui-rodaje #homeLink { display: none; }
   .gui-gen { align-self: stretch; justify-content: center; }
   .gui-text { min-height: 240px; }
   .gui-foot { flex-direction: column; align-items: flex-start; }
+}
+
+/* Asistente de etiquetas (editor de guiones) */
+.gui.wide { max-width: 1240px; }
+.gui-compose { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.gui-write .gui-text { min-height: 460px; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 14px; line-height: 1.7; }
+.gui-write .gui-text-h .gui-row { gap: 10px; }
+.gui-write .btn.small .fin-ico, .gui-reader .btn.small .fin-ico { width: 16px; height: 16px; }
+.gui-tagbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.gui-tagbtn { border: 1px solid var(--c-bd); background: var(--c-bg); color: var(--c); font-weight: 700; font-size: 12.5px; border-radius: 999px; padding: 6px 12px; transition: transform .15s ease, background .2s ease; white-space: nowrap; }
+.gui-tagbtn:hover { background: var(--c); color: #fff; }
+.gui-tagbtn:active { transform: scale(.95); }
+.gui-tagmore { position: relative; }
+.gui-tagmore summary { list-style: none; cursor: pointer; font-weight: 700; font-size: 12.5px; border: 1px solid var(--line-2); border-radius: 999px; padding: 6px 12px; color: var(--ink-2); background: var(--paper); }
+.gui-tagmore summary::-webkit-details-marker { display: none; }
+.gui-tagmore[open] summary { background: var(--bg); }
+.gui-tagmore > div { position: absolute; z-index: 10; top: calc(100% + 6px); left: 0; display: flex; flex-wrap: wrap; gap: 6px; width: 260px; padding: 10px; border-radius: 16px; background: var(--paper); border: 1px solid var(--line); box-shadow: 0 16px 40px rgba(29,29,31,.14); }
+.gui-guide summary { cursor: pointer; font-weight: 600; font-size: 13.5px; color: var(--brand); }
+.gui-guide .help { margin: 8px 0; font-size: 13.5px; }
+.gui-guide-g { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.gui-guide-g > b { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-3); }
+.gui-guide-r { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 10px; align-items: baseline; font-size: 13.5px; color: var(--ink-2); }
+.gui-reader { position: sticky; top: 76px; max-height: calc(100vh - 96px); overflow: hidden; gap: 10px; }
+.gui-read-sum { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; }
+.gui-pill { font-size: 11.5px; font-weight: 700; border-radius: 999px; padding: 2px 8px; color: var(--c); background: var(--c-bg); border: 1px solid var(--c-bd); white-space: nowrap; }
+.gui-pill.warn { color: #8a5a00; background: #fdf9ec; border-color: #eedfa8; }
+.gui-pill.ok { color: #15803d; background: #eff9f2; border-color: #bfe5cb; }
+.gui-read-list { display: flex; flex-direction: column; gap: 3px; overflow-y: auto; min-height: 0; margin: 0 -6px; padding: 0 6px 4px; }
+.gui-read { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 10px; align-items: baseline; text-align: left; border: 0; background: transparent; border-radius: 10px; padding: 6px 8px; font-size: 13.5px; transition: background .15s ease; }
+.gui-read:hover { background: var(--bg); }
+.gui-read.item { margin-top: 6px; }
+.gui-read.item .gui-read-txt { font-weight: 700; }
+.gui-read.desc .gui-read-txt { color: var(--ink-2); }
+.gui-read.warn { background: #fdf9ec; }
+.gui-read-tag { justify-self: start; font-size: 10.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; border-radius: 6px; padding: 2px 6px; color: var(--c, var(--ink-3)); background: var(--c-bg, transparent); border: 1px solid var(--c-bd, var(--line-2)); white-space: nowrap; }
+.gui-read-txt { min-width: 0; overflow-wrap: anywhere; }
+.gui-read-txt small { display: block; color: #8a5a00; font-weight: 600; font-size: 12px; }
+.gui-read-empty { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; padding: 18px 6px; color: var(--ink-2); font-size: 14px; }
+.gui-read-empty b { color: var(--ink); font-size: 15px; }
+.gui-actions { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+:root[data-theme="dark"] .gui-pill.warn, :root[data-theme="dark"] .gui-read.warn { color: #f0c96a; background: #2a2210; border-color: #5c4a1c; }
+:root[data-theme="dark"] .gui-pill.ok { color: #5fd38a; background: #12261b; border-color: #235c3a; }
+:root[data-theme="dark"] .gui-read-txt small { color: #f0c96a; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .gui-pill.warn, :root:not([data-theme="light"]) .gui-read.warn { color: #f0c96a; background: #2a2210; border-color: #5c4a1c; }
+  :root:not([data-theme="light"]) .gui-pill.ok { color: #5fd38a; background: #12261b; border-color: #235c3a; }
+  :root:not([data-theme="light"]) .gui-read-txt small { color: #f0c96a; }
+}
+@media (max-width: 900px) {
+  .gui-compose { grid-template-columns: minmax(0, 1fr); }
+  .gui-reader { position: static; max-height: 420px; }
+  .gui-write .gui-text { min-height: 300px; }
+}
+@media (max-width: 700px) {
+  .gui-tagbar { flex-wrap: nowrap; overflow-x: auto; margin-inline: -16px; padding: 2px 16px 4px; scrollbar-width: none; }
+  .gui-tagbar::-webkit-scrollbar { display: none; }
+  .gui-tagmore > div { position: fixed; left: 16px; right: 16px; top: auto; width: auto; }
+  .gui-write .gui-text { font-size: 16px !important; line-height: 1.6; }
+  .gui-read { grid-template-columns: 88px minmax(0, 1fr); }
+  .gui-guide-r { grid-template-columns: 1fr; gap: 2px; }
+  .gui-actions .btn { align-self: stretch; justify-content: center; }
 }
