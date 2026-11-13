@@ -726,7 +726,7 @@
     if (!sourceFor('pagos').length) { body.append(h('div', { class: 'block fin-empty fin-rise' }, h('h3', null, 'Sin pagos este mes'), h('p', { class: 'help' }, 'Usa "Registrar pago" o genera los cobros de los clientes de marketing mensual.'))); return; }
     if (!rows.length) { body.append(emptyFiltered()); return; }
     const sum = fn => rows.reduce((s, p) => s + fn(p), 0);
-    body.append(h('div', { class: 'fin-table-wrap fin-rise' }, h('table', { class: 'fin-table' },
+    body.append(h('div', { class: 'fin-table-wrap fin-rise' }, h('table', { class: 'fin-table t-pagos' },
       h('thead', null, h('tr', null, selHead(rows.map(r => r.id)), ...['Cliente', 'Valor', 'Avance', 'Recibido', 'Por cobrar', 'Pagos realizados', 'Estado', ''].map((c, i) => h('th', { class: i >= 1 && i <= 4 ? 'num' : '' }, c)))),
       h('tbody', null, rows.map(p => {
         const e = estado(p), av = avance(p);
@@ -794,7 +794,7 @@
       if (!list.length) return;
       const tot = list.filter(g => g.movimiento !== 'entrada').reduce((s, g) => s + Number(g.valor), 0);
       body.append(h('h3', { class: 'fin-h3 fin-rise' }, title, h('span', null, list.length + (list.length === 1 ? ' gasto · ' : ' gastos · ') + money(tot))));
-      body.append(h('div', { class: 'fin-table-wrap fin-rise' }, h('table', { class: 'fin-table' },
+      body.append(h('div', { class: 'fin-table-wrap fin-rise' }, h('table', { class: 'fin-table t-gastos' },
         h('thead', null, h('tr', null, selHead(list.map(g => g.id)), ...['Concepto', 'Categoría', 'Fecha', 'Valor', ''].map((c, i) => h('th', { class: i === 3 ? 'num' : '' }, c)))),
         h('tbody', null, list.map(g => h('tr', { class: S.sel.has(g.id) ? 'picked' : '' },
           selCell(g.id),
@@ -988,7 +988,7 @@
     body.append(h('div', { class: 'fin-rise' }, filterBar('clientes', CAT_ING, 'Buscar cliente')));
     const rows = applyFilters('clientes', S.clientes);
     if (!rows.length) { body.append(emptyFiltered()); return; }
-    body.append(h('div', { class: 'fin-table-wrap fin-rise' }, h('table', { class: 'fin-table' },
+    body.append(h('div', { class: 'fin-table-wrap fin-rise' }, h('table', { class: 'fin-table t-clientes' },
       h('thead', null, h('tr', null, selHead(rows.map(c => c.id)), ...['Cliente', 'Categoría', 'Valor', 'Día de pago', monthLabel(S.mes), ''].map((c, i) => h('th', { class: i === 2 ? 'num' : '' }, c)))),
       h('tbody', null, rows.map(c => {
         const p = S.pagos.find(x => x.cliente_id === c.id);
