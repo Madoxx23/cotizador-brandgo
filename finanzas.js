@@ -33,7 +33,7 @@
     extra:  { label: 'Servicio extra', abbr: 'SX', color: 'violeta' }
   };
   const AVATARS = { camilo: 'Camilo', juca: 'Juca', laura: 'Laura', malu: 'Malu', mauro: 'Mauro', paula: 'Paula', mariale: 'Mariale' };
-  const ESTADOS = { pagado: { label: 'Pagado', cls: 'ok' }, proceso: { label: 'En proceso', cls: 'mid' }, pendiente: { label: 'Pendiente', cls: 'no' } };
+  const ESTADOS = { pagado: { label: 'Pagado', cls: 'ok' }, proceso: { label: 'En proceso', cls: 'mid' }, pendiente: { label: 'Pendiente', cls: 'no' }, curso: { label: 'Campaña en curso', cls: 'cur' } };
 
   /* ---------------- Fechas y dinero ---------------- */
   const pad = n => String(n).padStart(2, '0');
@@ -178,15 +178,55 @@
   }
 
   /* ---------------- Cartera vencida ---------------- */
-  // Un cobro está vencido si no está pagado y ya pasó el día de pago del cliente en ese mes (sin día: fin de mes).
+  // Fecha desde la que se cobra el saldo:
+  //  · si el cobro tiene `vence`, esa fecha;
+  //  · campañas sin `vence`: ninguna, el saldo se cobra al finalizar la campaña;
+  //  · demás: el día de pago del cliente en ese mes (sin día: fin de mes).
+  function vencimiento(p) {
+    if (p.vence) return p.vence;
+    if (p.categoria === 'campana') return null;
+    const c = S.clientes.find(x => x.id === p.cliente_id);
+    return dayOf(p.mes, c && c.dia_pago ? c.dia_pago : 31);
+  }
+  const diasDesde = iso => Math.floor((new Date(todayISO() + 'T12:00:00') - new Date(iso + 'T12:00:00')) / 86400000);
+  // Campaña con anticipo cuyo saldo aún no se cobra
+  const enCurso = p => p.categoria === 'campana' && estado(p) !== 'pagado' && pagado(p) > 0 && (!p.vence || p.vence > todayISO());
+  const estadoVista = p => (enCurso(p) ? 'curso' : estado(p));
   function carteraVencida() {
-    const hoy = new Date(todayISO() + 'T12:00:00');
     return (S.all.pagos || []).filter(p => p.cliente_id && estado(p) !== 'pagado').map(p => {
       const c = S.clientes.find(x => x.id === p.cliente_id);
-      const vence = dayOf(p.mes, c && c.dia_pago ? c.dia_pago : 31);
-      const dias = Math.floor((hoy - new Date(vence + 'T12:00:00')) / 86400000);
-      return { p, c, vence, dias, debe: Math.max(0, Number(p.valor) - pagado(p)) };
-    }).filter(x => x.dias > 0 && x.debe > 0).sort((a, b) => b.dias - a.dias);
+      const vence = vencimiento(p);
+      return { p, c, vence, dias: vence ? diasDesde(vence) : 0, debe: Math.max(0, Number(p.valor) - pagado(p)) };
+    }).filter(x => x.vence && x.dias > 0 && x.debe > 0).sort((a, b) => b.dias - a.dias);
+  }
+  function campanasEnCurso() {
+    return (S.all.pagos || []).filter(enCurso).map(p => ({ p, c: S.clientes.find(x => x.id === p.cliente_id), debe: Math.max(0, Number(p.valor) - pagado(p)) }))
+      .sort((a, b) => a.p.mes.localeCompare(b.p.mes));
+  }
+  async function finalizarCampana(p) {
+    try {
+      await store.update('pagos', p.id, { vence: todayISO() });
+      toast('Campaña finalizada: el saldo ya se puede cobrar'); await refresh();
+    } catch (e) { console.error(e); toast(/vence/i.test(e.message || '') ? 'Primero corre supabase/campanas.sql en Supabase' : 'No se pudo marcar como finalizada'); }
+  }
+  function campanasCard() {
+    const list = campanasEnCurso();
+    if (!list.length) return null;
+    const total = list.reduce((s, x) => s + x.debe, 0), open = !!S.campOpen;
+    return h('section', { class: 'fin-alert info fin-rise' + (open ? ' open' : '') },
+      h('button', { type: 'button', class: 'fin-alert-h', 'aria-expanded': open ? 'true' : 'false', onclick: () => { S.campOpen = !open; render(false); } },
+        h('span', { class: 'fin-alert-ico' }, icon('reloj')),
+        h('span', { class: 'fin-alert-t' }, h('b', null, 'Saldos al finalizar campañas'), h('small', null, `${list.length} ${list.length === 1 ? 'campaña en curso con anticipo' : 'campañas en curso con anticipo'} · se cobran al terminar, no están vencidas`)),
+        h('b', { class: 'fin-alert-v' }, money(total)),
+        h('span', { class: 'fin-alert-chev' }, open ? 'Ocultar' : 'Ver')),
+      open ? h('div', { class: 'fin-alert-list' }, list.map(x => h('div', { class: 'fin-alert-row' },
+        chipAbbr(x.p.categoria, CAT_ING),
+        h('div', { class: 'n' }, h('b', null, x.c ? x.c.nombre : 'Cliente'), h('small', null, `Desde ${monthLabel(x.p.mes)} · anticipo ${avance(x.p)}%`)),
+        h('span', { class: 'fin-date' }, h('i'), x.p.vence ? 'Saldo se cobra el ' + dateShort(x.p.vence) : 'Saldo al finalizar'),
+        h('b', { class: 'v' }, money(x.debe)),
+        h('div', { class: 'fin-acts' },
+          h('button', { type: 'button', class: 'btn small', onclick: () => finalizarCampana(x.p) }, 'Finalizar campaña'),
+          h('button', { type: 'button', class: 'btn small primary', onclick: () => generarCuenta(x.p) }, 'Cuenta de cobro'))))) : null);
   }
   function carteraAlert() {
     const list = carteraVencida();
@@ -363,7 +403,11 @@
     clientes: '<rect x="3.5" y="7.3" width="17" height="12.4" rx="3"/><path d="M9 7.3V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1.3M3.5 12.6h17"/>',
     filtro: '<path d="M4 7h16M7 12h10M10.2 17h3.6"/>',
     papelera: '<path d="M4.5 7h15M10 4h4M6.5 7l.9 11.4a2 2 0 0 0 2 1.8h5.2a2 2 0 0 0 2-1.8L17.5 7M10.2 11v5.5M13.8 11v5.5"/>',
-    mas: '<path d="M12 5.5v13M5.5 12h13"/>'
+    mas: '<path d="M12 5.5v13M5.5 12h13"/>',
+    reloj: '<circle cx="12" cy="12" r="8.6"/><path d="M12 7.6V12l3 2"/>',
+    cobrar: '<rect x="2.8" y="6.2" width="18.4" height="11.6" rx="2.6"/><circle cx="12" cy="12" r="2.7"/><path d="M6.3 9.6v4.8M17.7 9.6v4.8"/>',
+    gastar: '<path d="M6.2 3.6h11.6v16.8l-2.1-1.4-1.9 1.4-1.8-1.4-1.8 1.4-1.9-1.4-2.1 1.4z"/><path d="M9.2 8h5.6M9.2 11.4h5.6M9.2 14.8h3.4"/>',
+    nominaPago: '<circle cx="9" cy="7.8" r="3.2"/><path d="M3.4 19.2c.6-3.2 2.8-5 5.6-5 1.3 0 2.4.4 3.3 1"/><circle cx="17.2" cy="16.4" r="4"/><path d="M17.2 14.3v4.2M15.9 15.3h1.9a.8.8 0 0 1 0 1.6h-1.3a.8.8 0 0 0 0 1.6h1.9"/>'
   };
   function icon(name) {
     const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -392,11 +436,11 @@
       h('div', { class: 'fin-head' },
         h('div', null, h('p', { class: 'eyebrow' }, 'Finanzas Brandgo'), h('h1', { class: 'q fin-title' }, '¿Qué vas a registrar hoy?')),
         h('div', { class: 'fin-quick' },
-          h('button', { type: 'button', class: 'fin-qa pay', onclick: () => openPago() }, h('b', null, 'PG'), h('span', null, h('strong', null, 'Registrar pago'), h('small', null, 'Un cliente pagó'))),
-          h('button', { type: 'button', class: 'fin-qa exp', onclick: () => openGasto() }, h('b', null, 'GS'), h('span', null, h('strong', null, 'Registrar gasto'), h('small', null, 'Salió dinero'))),
-          h('button', { type: 'button', class: 'fin-qa nom', onclick: () => openNomina() }, h('b', null, 'NO'), h('span', null, h('strong', null, 'Pagar nómina'), h('small', null, 'Quincena o mes completo'))))),
+          h('button', { type: 'button', class: 'fin-qa pay', onclick: () => openPago() }, h('b', null, icon('cobrar')), h('span', null, h('strong', null, 'Registrar pago'), h('small', null, 'Un cliente pagó'))),
+          h('button', { type: 'button', class: 'fin-qa exp', onclick: () => openGasto() }, h('b', null, icon('gastar')), h('span', null, h('strong', null, 'Registrar gasto'), h('small', null, 'Salió dinero'))),
+          h('button', { type: 'button', class: 'fin-qa nom', onclick: () => openNomina() }, h('b', null, icon('nominaPago')), h('span', null, h('strong', null, 'Pagar nómina'), h('small', null, 'Quincena o mes completo'))))),
       h('div', { class: 'fin-bar' },
-        h('nav', { class: 'fin-tabs', 'aria-label': 'Secciones' }, TABS.map(([k, ab, lb]) => h('button', { type: 'button', class: S.tab === k ? 'on' : '', 'aria-current': S.tab === k ? 'page' : null, 'aria-label': lb, 'data-tip': lb, onclick: () => { S.tab = k; render(); } }, icon(k), k === 'pagos' && carteraVencida().length ? h('span', { class: 'fin-tab-dot', 'aria-label': carteraVencida().length + ' cobros vencidos' }, carteraVencida().length) : null))),
+        h('nav', { class: 'fin-tabs', 'aria-label': 'Secciones' }, TABS.map(([k, ab, lb]) => h('button', { type: 'button', class: S.tab === k ? 'on' : '', 'aria-current': S.tab === k ? 'page' : null, onclick: () => { S.tab = k; render(); } }, icon(k), h('span', null, lb), k === 'pagos' && carteraVencida().length ? h('span', { class: 'fin-tab-dot', 'aria-label': carteraVencida().length + ' cobros vencidos' }, carteraVencida().length) : null))),
         h('div', { class: 'fin-month' },
           h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Mes anterior', onclick: () => { S.mes = addMonths(S.mes, -1); refresh(); } }, '‹'),
           monthInput,
@@ -477,6 +521,7 @@
 
   function viewMeses(body) {
     const ca = carteraAlert(); if (ca) body.append(ca);
+    const cc = campanasCard(); if (cc) body.append(cc);
     const list = balances();
     const actual = monthOf(todayISO());
     body.append(h('div', { class: 'fin-sum-head fin-rise' },
@@ -558,6 +603,7 @@
 
   function viewResumen(body) {
     const ca = carteraAlert(); if (ca) body.append(ca);
+    const cc = campanasCard(); if (cc) body.append(cc);
     const t = totMes();
     const tp = totPrev();
     const has = (S.prev && (S.prev.pagos.length || S.prev.gastos.length || S.prev.nomina.length));
@@ -743,6 +789,7 @@
      ===================================================================== */
   function viewPagos(body) {
     const ca = carteraAlert(); if (ca) body.append(ca);
+    const cc = campanasCard(); if (cc) body.append(cc);
     const f = S.f.pagos, range = rangeOn(f);
     const rows = applyFilters('pagos', sourceFor('pagos')).sort((a, b) => (range ? b.mes.localeCompare(a.mes) : 0) || clienteDe(a).nombre.localeCompare(clienteDe(b).nombre));
     const sinCobro = S.clientes.filter(c => c.activo && c.categoria === 'mensual' && !S.pagos.some(p => p.cliente_id === c.id));
@@ -770,8 +817,8 @@
           h('td', { class: 'num' }, money(pagado(p))),
           h('td', { class: 'num' }, money(Math.max(0, Number(p.valor) - pagado(p)))),
           h('td', null, abonos.length ? h('div', { class: 'fin-dates' }, abonos.map(a => dateBubble(a.fecha, money(a.valor)))) : h('span', { class: 'fin-muted' }, 'Sin pagos')),
-          h('td', null, h('div', { class: 'fin-dates' }, estadoChip(e), (p.cuentas || []).map(c => h('span', { class: 'fin-date doc', title: 'Cuenta de cobro emitida el ' + dateShort(c.fecha) + ' por ' + money(c.valor) }, h('i'), c.numero)))),
-          h('td', { class: 'acts' }, rowActions('pagos', p, [e !== 'pagado' ? ['Abonar', () => openPago({ cliente_id: p.cliente_id })] : null, ['Cuenta de cobro', () => generarCuenta(p)], ['Editar', () => openCobro(p)]])));
+          h('td', null, h('div', { class: 'fin-dates' }, estadoChip(estadoVista(p)), enCurso(p) ? h('span', { class: 'fin-date' }, h('i'), p.vence ? 'Saldo: ' + dateShort(p.vence) : 'Saldo al finalizar') : null, (p.cuentas || []).map(c => h('span', { class: 'fin-date doc', title: 'Cuenta de cobro emitida el ' + dateShort(c.fecha) + ' por ' + money(c.valor) }, h('i'), c.numero)))),
+          h('td', { class: 'acts' }, rowActions('pagos', p, [e !== 'pagado' ? ['Abonar', () => openPago({ cliente_id: p.cliente_id })] : null, enCurso(p) ? ['Finalizar', () => finalizarCampana(p)] : null, ['Cuenta de cobro', () => generarCuenta(p)], ['Editar', () => openCobro(p)]])));
       })),
       h('tfoot', null, h('tr', null, h('td'), h('td', null, rows.length + (rows.length === 1 ? ' cobro' : ' cobros')), h('td', { class: 'num' }, money(sum(p => Number(p.valor)))), h('td'), h('td', { class: 'num' }, money(sum(pagado))), h('td', { class: 'num' }, money(sum(p => Math.max(0, Number(p.valor) - pagado(p))))), h('td'), h('td'), h('td'))))));
   }
@@ -1172,7 +1219,7 @@
 
   /* ---------- Editar cobro (valor, categoría, abonos) ---------- */
   function openCobro(p) {
-    const f = { valor: Number(p.valor), categoria: p.categoria, concepto: p.concepto || '', abonos: (p.abonos || []).map(a => Object.assign({}, a)) };
+    const f = { valor: Number(p.valor), categoria: p.categoria, concepto: p.concepto || '', vence: p.vence || '', abonos: (p.abonos || []).map(a => Object.assign({}, a)) };
     const list = h('div', { class: 'stack', style: { gap: '8px' } });
     const drawList = () => {
       list.innerHTML = '';
@@ -1184,13 +1231,25 @@
     };
     drawList();
     const con = h('input', { class: 'field', id: 'c-concepto', oninput: e => { f.concepto = e.target.value; } }); con.value = f.concepto;
+    // Fecha para cobrar el saldo: en campañas, vacía mientras la campaña sigue en curso
+    const venceBox = h('div');
+    const drawVence = () => {
+      venceBox.innerHTML = '';
+      const inp = h('input', { type: 'date', class: 'field', id: 'c-vence', value: f.vence, onchange: e => { f.vence = e.target.value; } });
+      venceBox.append(lbl(f.categoria === 'campana' ? 'Fecha para cobrar el saldo (fin de la campaña)' : 'Fecha para cobrar el saldo', 'c-vence', inp, true),
+        h('p', { class: 'help', style: { margin: '6px 0 0', fontSize: '12.5px' } }, f.categoria === 'campana' ? 'Déjala vacía mientras la campaña sigue en curso: el saldo no cuenta como vencido. Al terminar, pon la fecha o usa "Finalizar".' : 'Si la dejas vacía se usa el día de pago del cliente.'));
+    };
+    drawVence();
     const content = h('div', { class: 'stack' },
       h('div', { class: 'grid2' }, lbl('Valor total', 'c-valor', moneyInput('c-valor', f.valor, v => { f.valor = v; })), lbl('Concepto', 'c-concepto', con, true)),
-      h('div', null, h('span', { class: 'label' }, 'Categoría'), catPicker(CAT_ING, f.categoria, k => { f.categoria = k; })),
+      h('div', null, h('span', { class: 'label' }, 'Categoría'), catPicker(CAT_ING, f.categoria, k => { f.categoria = k; drawVence(); })),
+      venceBox,
       h('div', null, h('span', { class: 'label' }, 'Abonos'), list, h('button', { type: 'button', class: 'add-line', style: { marginTop: '8px' }, onclick: () => { f.abonos.push({ fecha: todayISO(), valor: 0 }); drawList(); } }, '+ Agregar abono')));
     const save = h('button', { type: 'button', class: 'btn primary huge', onclick: async () => {
       busy(save, 'Guardando…');
-      try { await store.update('pagos', p.id, { valor: f.valor, categoria: f.categoria, concepto: f.concepto.trim() || null, abonos: f.abonos.filter(a => Number(a.valor) > 0) }); closeSheet(); toast('Cobro actualizado'); await refresh(); }
+      const patch = { valor: f.valor, categoria: f.categoria, concepto: f.concepto.trim() || null, abonos: f.abonos.filter(a => Number(a.valor) > 0) };
+      if ((f.vence || '') !== (p.vence || '')) patch.vence = f.vence || null;  // solo se envía si cambió (antes de campanas.sql no existe)
+      try { await store.update('pagos', p.id, patch); closeSheet(); toast('Cobro actualizado'); await refresh(); }
       catch (e) { console.error(e); toast('No se pudo guardar'); unbusy(save); }
     } }, 'Guardar cambios');
     openSheet('Editar cobro · ' + clienteDe(p).nombre, monthLabel(p.mes), content, [h('button', { type: 'button', class: 'btn', onclick: closeSheet }, 'Cancelar'), save], CAT_ING[p.categoria].color);

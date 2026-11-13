@@ -11,6 +11,8 @@ alter table public.clientes add column if not exists plan      text check (lengt
 
 -- ---------- Pagos: cuentas de cobro emitidas para cada cobro ----------
 alter table public.pagos add column if not exists cuentas jsonb not null default '[]'::jsonb;
+-- Fecha desde la que se cobra el saldo (campañas: vacía hasta finalizar)
+alter table public.pagos add column if not exists vence date;
 
 -- ---------- Quién creó y quién editó por última vez ----------
 alter table public.clientes add column if not exists updated_by uuid references auth.users (id) on delete set null;

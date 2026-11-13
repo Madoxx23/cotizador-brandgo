@@ -8,13 +8,13 @@
 
   /* ---------------- Paletas por servicio ---------------- */
   const PALETTES = {
-    rosa:     { name: 'Rosa',     ac: '#d41bbf', bg: '#fcf0fb', bd: '#f0bfe9', ln: '#f1d9ee' },
-    naranja:  { name: 'Naranja',  ac: '#f05a0a', bg: '#fdf4ee', bd: '#f7cfb6', ln: '#f3e1d6' },
-    amarillo: { name: 'Amarillo', ac: '#d69a00', bg: '#fdf9ec', bd: '#eedfa8', ln: '#efe8d2' },
-    verde:    { name: 'Verde',    ac: '#16a34a', bg: '#eff9f2', bd: '#bfe5cb', ln: '#d9ecdf' },
-    azul:     { name: 'Azul',     ac: '#2236e6', bg: '#eff1fe', bd: '#bfc5f6', ln: '#dcdff5' },
-    violeta:  { name: 'Violeta',  ac: '#7c3aed', bg: '#f5f0fe', bd: '#d8c7fb', ln: '#e6dcf7' },
-    turquesa: { name: 'Turquesa', ac: '#0891b2', bg: '#ecf8fb', bd: '#b5e2ec', ln: '#d6ecf1' }
+    rosa:     { name: 'Rosa', ac: 'var(--p-rosa)', bg: 'var(--p-rosa-bg)', bd: 'var(--p-rosa-bd)', ln: 'var(--p-rosa-ln)' },
+    naranja:  { name: 'Naranja', ac: 'var(--p-naranja)', bg: 'var(--p-naranja-bg)', bd: 'var(--p-naranja-bd)', ln: 'var(--p-naranja-ln)' },
+    amarillo: { name: 'Amarillo', ac: 'var(--p-amarillo)', bg: 'var(--p-amarillo-bg)', bd: 'var(--p-amarillo-bd)', ln: 'var(--p-amarillo-ln)' },
+    verde:    { name: 'Verde', ac: 'var(--p-verde)', bg: 'var(--p-verde-bg)', bd: 'var(--p-verde-bd)', ln: 'var(--p-verde-ln)' },
+    azul:     { name: 'Azul', ac: 'var(--p-azul)', bg: 'var(--p-azul-bg)', bd: 'var(--p-azul-bd)', ln: 'var(--p-azul-ln)' },
+    violeta:  { name: 'Violeta', ac: 'var(--p-violeta)', bg: 'var(--p-violeta-bg)', bd: 'var(--p-violeta-bd)', ln: 'var(--p-violeta-ln)' },
+    turquesa: { name: 'Turquesa', ac: 'var(--p-turquesa)', bg: 'var(--p-turquesa-bg)', bd: 'var(--p-turquesa-bd)', ln: 'var(--p-turquesa-ln)' }
   };
   const PAL_ORDER = Object.keys(PALETTES);
 
