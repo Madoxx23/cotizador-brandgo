@@ -3,7 +3,7 @@
 Herramienta del equipo para crear documentos con la línea gráfica de Brandgo.
 En línea: https://cotizador-brandgo.vercel.app
 
-Al entrar aparece la pregunta **«¿Qué necesitas hoy?»** con dos tareas:
+Al entrar aparece la pregunta **«¿Qué necesitas hoy?»** con cuatro tareas:
 
 ## 1. Cotizar una campaña (`cotizador.html`)
 Propuesta comercial paso a paso → PDF en formato presentación 16:9.
@@ -45,10 +45,18 @@ Solo entra quien tenga una cuenta autorizada (correo y contraseña). Los datos v
 - **Registrado por:** cada pago, gasto y nómina muestra quién lo registró o editó por última vez.
 - **Resumen:** saldo neto (facturado − nómina − gastos), lo recibido, lo que falta por cobrar, gráficas por categoría y exportación a PDF.
 
+## 4. Guiones de rodaje (`guiones.html`)
+Organizados por **cuenta** (cliente). Dentro de cada cuenta están sus guiones y se crean nuevos.
+1. Se pega el guion escrito y la IA (Claude, en `api/guion.js`) lo convierte en un guion técnico: entrevistas, tomas de apoyo, montajes y cierre, agrupados por ubicación.
+2. Checklist con avance en vivo: si alguien marca una toma desde otro celular, se ve al instante.
+3. **Enlace de rodaje:** versión limpia solo para marcar, para compartir con el equipo en el set.
+- Acceso abierto (sin cuenta) para el equipo; en la base no se puede borrar, solo archivar.
+- Requiere `supabase/guiones.sql` y la variable `ANTHROPIC_API_KEY` en Vercel.
+
 ## Para el equipo técnico
 - `index.html`: inicio. `styles.css`: estilos compartidos (web, diapositivas y documento).
 - `app.js`: cotizador. `cobro.js`: cuentas de cobro. `finanzas.js`: finanzas. `common.js`: utilidades compartidas y número a letras.
 - `supabase/finanzas.sql`: tablas y reglas de acceso. `supabase/metas.sql`, `nomina.sql`, `avatares.sql`, `conexiones.sql` y `campanas.sql`: actualizaciones para el proyecto ya creado (en ese orden). `finanzas-config.js`: URL y clave pública de Supabase. `vercel.json`: cabeceras de seguridad.
 - Para probar Finanzas en local sin base de datos: `http://localhost:<puerto>/finanzas.html?demo` (solo funciona en localhost).
-- Si cambias fotos en `assets/`, regenera `assets.js` con `node build-assets.js`.
+- Si cambias fotos en `assets/`, regenera `assets.js` con `node build-assets.cjs`.
 - Cada cambio que se sube a `main` se publica solo en Vercel.
