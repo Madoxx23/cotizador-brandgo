@@ -51,12 +51,13 @@ Organizados por **cuenta** (cliente). Dentro de cada cuenta están sus guiones y
 2. Checklist con avance en vivo: si alguien marca una toma desde otro celular, se ve al instante.
 3. **Enlace de rodaje:** versión limpia solo para marcar, para compartir con el equipo en el set.
 - Acceso abierto (sin cuenta) para el equipo; en la base no se puede borrar, solo archivar.
-- Requiere correr `supabase/guiones.sql` en Supabase.
+- **Etiquetar con Claude** (`api/guion.js`, modelo Sonnet 5.5): se pega el guion libre y Claude le pone las etiquetas; luego se revisa en «Así se lee». Pide iniciar sesión: pueden usarlo los miembros de Finanzas y los correos de la tabla `guion_editores` (que no dan acceso a Finanzas). Cada uso queda en `guion_ia_uso` con sus tokens.
+- Requiere correr `supabase/guiones.sql` y `supabase/guiones-ia.sql`, y la variable `ANTHROPIC_API_KEY` en Vercel.
 
 ## Para el equipo técnico
 - `index.html`: inicio. `styles.css`: estilos compartidos (web, diapositivas y documento).
 - `app.js`: cotizador. `cobro.js`: cuentas de cobro. `finanzas.js`: finanzas. `common.js`: utilidades compartidas y número a letras.
-- `supabase/finanzas.sql`: tablas y reglas de acceso. `supabase/metas.sql`, `nomina.sql`, `avatares.sql`, `conexiones.sql` , `campanas.sql`, `guiones.sql` y `gastos-estado.sql`: actualizaciones para el proyecto ya creado (en ese orden). `finanzas-config.js`: URL y clave pública de Supabase. `vercel.json`: cabeceras de seguridad.
+- `supabase/finanzas.sql`: tablas y reglas de acceso. `supabase/metas.sql`, `nomina.sql`, `avatares.sql`, `conexiones.sql` , `campanas.sql`, `guiones.sql`, `gastos-estado.sql` y `guiones-ia.sql`: actualizaciones para el proyecto ya creado (en ese orden). `finanzas-config.js`: URL y clave pública de Supabase. `vercel.json`: cabeceras de seguridad.
 - Para probar Finanzas en local sin base de datos: `http://localhost:<puerto>/finanzas.html?demo` (solo funciona en localhost).
 - Si cambias fotos en `assets/`, regenera `assets.js` con `node build-assets.cjs`.
 - Cada cambio que se sube a `main` se publica solo en Vercel.

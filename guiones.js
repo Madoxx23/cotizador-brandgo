@@ -29,7 +29,7 @@
   const isDemo = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) && new URLSearchParams(location.search).has('demo');
 
   function supabaseStore() {
-    const sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
+    const sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, { auth: { storage: window.sessionStorage, storageKey: 'brandgo-guiones-auth', persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } });
     const ok = r => { if (r.error) throw r.error; return r.data; };
     return {
       async cuentas() { return ok(await sb.from('guion_cuentas').select('*').eq('archivada', false).order('nombre')); },
@@ -40,6 +40,18 @@
       async insert(t, row) { return ok(await sb.from(t).insert(row).select().single()); },
       async update(t, id, patch) { return ok(await sb.from(t).update(patch).eq('id', id).select().single()); },
       async check(gid, item, valor) { return ok(await sb.rpc('marcar_check', { gid, item, valor })); },
+      // Sesión solo para «Etiquetar con Claude»
+      async sesion() { const { data } = await sb.auth.getSession(); return data.session; },
+      async entrar(email, password) { return ok(await sb.auth.signInWithPassword({ email, password })).session; },
+      async salir() { await sb.auth.signOut(); },
+      async puedeIA() { return ok(await sb.rpc('puede_usar_ia')) === true; },
+      async etiquetarIA(payload) {
+        const ses = await this.sesion();
+        const r = await fetch('/api/guion', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (ses ? ses.access_token : '') }, body: JSON.stringify(payload) });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) { const e = new Error(data.error || 'No se pudo etiquetar el guion.'); e.status = r.status; throw e; }
+        return data.texto;
+      },
       escuchar(gid, fn) {
         const ch = sb.channel('guion-' + gid).on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'guiones', filter: 'id=eq.' + gid }, p => fn(p.new)).subscribe();
         return () => sb.removeChannel(ch);
@@ -56,7 +68,7 @@
       db.guion_cuentas.push(c, { id: 'c-demo2', nombre: 'Otra cuenta', color: 'azul', archivada: false, created_at: now(), updated_at: now() });
       if (e) db.guiones.push({ id: 'g-demo', cuenta_id: c.id, titulo: e.titulo, autor: 'Mauro', texto: '(texto del guion)', estructura: e, checks: { v1: true, v8: true }, archivado: false, created_at: now(), updated_at: now() });
     }).catch(() => {});
-    const listeners = {};
+    const listeners = {}; let demoSes = null;
     return {
       async cuentas() { await ready; return db.guion_cuentas.filter(c => !c.archivada); },
       async cuenta(cid) { await ready; return db.guion_cuentas.find(c => c.id === cid) || null; },
@@ -66,6 +78,11 @@
       async insert(t, row) { const r = Object.assign({ id: id(), created_at: now(), updated_at: now(), checks: {}, archivado: false, archivada: false }, row); db[t].push(r); return r; },
       async update(t, rid, patch) { const r = db[t].find(x => x.id === rid); Object.assign(r, patch, { updated_at: now() }); return r; },
       async check(gid, item, valor) { const g = db.guiones.find(x => x.id === gid); g.checks = Object.assign({}, g.checks); if (valor) g.checks[item] = true; else delete g.checks[item]; (listeners[gid] || []).forEach(f => f(g)); return g.checks; },
+      async sesion() { return demoSes; },
+      async entrar(email) { demoSes = { user: { email } }; return demoSes; },
+      async salir() { demoSes = null; },
+      async puedeIA() { return true; },
+      async etiquetarIA() { await new Promise(r => setTimeout(r, 1500)); return PLANTILLA; },
       escuchar(gid, fn) { (listeners[gid] = listeners[gid] || []).push(fn); return () => { listeners[gid] = (listeners[gid] || []).filter(f => f !== fn); }; }
     };
   }
@@ -414,7 +431,58 @@
     const preview = h('div');
     const panel = h('div', { class: 'gui-read-list' });
     const resumen = h('div', { class: 'gui-read-sum' });
-    const autoBtn = h('button', { type: 'button', class: 'btn small', onclick: autoEtiquetar }, icon('sparkle'), 'Etiquetar por mí');
+    const autoBtn = h('button', { type: 'button', class: 'btn small', onclick: autoEtiquetar, title: 'Gratis: reconoce patrones simples (Escena 1, INT., Entrevista a…)' }, icon('edit'), 'Etiquetar por mí');
+    const iaBtn = h('button', { type: 'button', class: 'btn small gui-ia', onclick: etiquetarConClaude, title: 'Claude lee el guion escrito libremente y le pone todas las etiquetas' });
+    const iaLabel = t => { iaBtn.innerHTML = ''; iaBtn.append(icon('sparkle'), t); };
+    iaLabel('Etiquetar con Claude');
+    const sesBox = h('div', { class: 'gui-ses' });
+
+    // ----- Etiquetar con Claude (requiere sesión de alguien autorizado)
+    async function drawSes() {
+      const ses = await db.sesion().catch(() => null);
+      sesBox.innerHTML = '';
+      if (ses && ses.user) sesBox.append(h('span', null, 'Claude activo para ' + ses.user.email), h('button', { type: 'button', class: 'gui-link', onclick: async () => { await db.salir(); drawSes(); toast('Sesión cerrada'); } }, 'Salir'));
+    }
+    function pedirLogin(despues) {
+      const em = h('input', { class: 'field', id: 'ia-email', type: 'email', autocomplete: 'username', placeholder: 'tu@correo.com' });
+      const pw = h('input', { class: 'field', id: 'ia-pass', type: 'password', autocomplete: 'current-password' });
+      const e2 = h('div', { class: 'fin-err', role: 'alert' });
+      const go2 = h('button', { type: 'submit', class: 'btn primary huge' }, 'Entrar');
+      const form = h('form', { class: 'stack', onsubmit: async ev => {
+        ev.preventDefault(); e2.textContent = '';
+        if (!em.value.trim() || !pw.value) { e2.textContent = 'Escribe tu correo y contraseña.'; return; }
+        busy(go2, 'Entrando…');
+        try { await db.entrar(em.value.trim(), pw.value); closeSheet(); drawSes(); despues(); }
+        catch (x) { console.error(x); e2.textContent = /invalid|credentials/i.test(x.message || '') ? 'Correo o contraseña incorrectos.' : 'No se pudo iniciar sesión. Revisa tu conexión.'; unbusy(go2); }
+      } }, lbl('Correo', 'ia-email', em), lbl('Contraseña', 'ia-pass', pw), e2, h('button', { type: 'submit', hidden: true }));
+      openSheet('Inicia sesión para usar Claude', 'Con tu cuenta de Brandgo. Solo se pide para etiquetar con Claude; el resto de guiones sigue abierto.', form,
+        [h('button', { type: 'button', class: 'btn', onclick: closeSheet }, 'Cancelar'), h('button', { type: 'button', class: 'btn primary huge', onclick: () => form.requestSubmit() }, 'Entrar')], 'violeta');
+    }
+    let iaOcupado = false;
+    async function etiquetarConClaude() {
+      if (iaOcupado) return;
+      err.textContent = '';
+      if (f.texto.trim().length < 40) { err.textContent = 'Pega el guion completo antes de etiquetarlo con Claude.'; ta.focus(); return; }
+      if (f.texto.length > MAX_CHARS) { err.textContent = 'El guion es muy largo. Divídelo en partes.'; return; }
+      const ses = await db.sesion().catch(() => null);
+      if (!ses) { pedirLogin(etiquetarConClaude); return; }
+      try { if (!(await db.puedeIA())) { err.textContent = 'Tu cuenta no tiene permiso para usar Claude. Pídele acceso a Mauro.'; return; } }
+      catch (x) { console.error(x); err.textContent = /puede_usar_ia|function|schema/i.test(x.message || '') ? 'Falta activar Claude en la base de datos: corre supabase/guiones-ia.sql.' : 'No se pudo verificar tu acceso. Revisa tu conexión.'; return; }
+      iaOcupado = true; iaBtn.disabled = true; ta.readOnly = true; writeBlock.classList.add('gui-busy');
+      const pasos = ['Claude está leyendo…', 'Buscando ubicaciones…', 'Separando entrevistas y tomas…', 'Poniendo las etiquetas…'];
+      let k = 0; iaLabel(pasos[0]); const t = setInterval(() => { k = (k + 1) % pasos.length; iaLabel(pasos[k]); }, 4000);
+      try {
+        const out = await db.etiquetarIA({ texto: f.texto, titulo: f.titulo, cliente: c.nombre });
+        ta.readOnly = false; setTexto(out, 0); ta.scrollTop = 0;
+        toast('Listo. Revisa «Así se lee» y corrige lo que haga falta. Ctrl+Z deshace.');
+      } catch (x) {
+        console.error(x);
+        if (x.status === 401) await db.salir().catch(() => {});
+        err.textContent = x.message || 'No se pudo etiquetar el guion.';
+      } finally {
+        clearInterval(t); iaOcupado = false; iaBtn.disabled = false; ta.readOnly = false; writeBlock.classList.remove('gui-busy'); iaLabel('Etiquetar con Claude'); drawSes();
+      }
+    }
     const genBtn = h('button', { type: 'button', class: 'btn primary huge gui-gen', onclick: armar }, icon('check'), 'Armar checklist');
     const saveBtn = h('button', { type: 'button', class: 'btn primary huge', onclick: guardar }, existente ? 'Guardar cambios' : 'Guardar guion');
 
@@ -533,6 +601,11 @@
       } catch (e) { console.error(e); err.textContent = 'No se pudo guardar. Revisa tu conexión.'; unbusy(saveBtn); }
     }
 
+    const writeBlock = h('div', { class: 'block gui-write' },
+      h('div', { class: 'gui-text-h' }, h('label', { class: 'label', for: 'gs-texto' }, 'Guion'), count),
+      h('div', { class: 'gui-ia-row' }, iaBtn, autoBtn, sesBox),
+      null, null, null);
+
     // Barra de etiquetas: tocar una pone esa etiqueta en la línea donde está el cursor
     const grupos = [...new Set(ETIQUETAS.map(t => t.g))];
     const barra = h('div', { class: 'gui-tagbar', role: 'toolbar', 'aria-label': 'Etiquetas' },
@@ -549,19 +622,18 @@
       h('div', { class: 'gui-head', style: pv(p) }, h('div', null,
         h('button', { type: 'button', class: 'gui-back', onclick: () => (existente ? go({ g: gid }) : go({ cuenta: c.id })) }, '‹ ' + (existente ? 'Volver al guion' : c.nombre)),
         h('h1', { class: 'q' }, existente ? 'Editar guion' : 'Nuevo guion'),
-        h('p', { class: 'help' }, 'Escribe el guion con etiquetas (UBICACIÓN, ENTREVISTA, TOMA…). El asistente lo lee en vivo y arma el plan de rodaje por ubicación.'))),
+        h('p', { class: 'help' }, 'Pega el guion y toca «Etiquetar con Claude», o escríbelo tú con etiquetas (UBICACIÓN, ENTREVISTA, TOMA…). El asistente lo lee en vivo y arma el plan de rodaje por ubicación.'))),
       h('div', { class: 'stack gui-form', style: pv(p) },
         h('div', { class: 'block' }, lbl('Título del guion', 'gs-titulo', titulo),
           h('div', null, h('span', { class: 'label' }, '¿Quién lo escribió?'), chips, h('div', { style: { marginTop: '8px' } }, otros))),
         h('div', { class: 'gui-compose' },
-          h('div', { class: 'block gui-write' },
-            h('div', { class: 'gui-text-h' }, h('label', { class: 'label', for: 'gs-texto' }, 'Guion'), h('div', { class: 'gui-row' }, count, autoBtn)),
-            barra, ta, guia),
+          writeBlock,
           h('aside', { class: 'block gui-reader' },
             h('div', { class: 'gui-text-h' }, h('span', { class: 'label' }, 'Así se lee'), resumen), panel)),
         h('div', { class: 'gui-actions' }, err, genBtn),
         preview));
-    onTexto(); clearTimeout(tmr); drawLectura();
+    writeBlock.append(barra, ta, guia);
+    onTexto(); clearTimeout(tmr); drawLectura(); drawSes();
     if (existente) armar(true);
   }
 

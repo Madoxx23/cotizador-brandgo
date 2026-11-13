@@ -1,0 +1,9 @@
+{
+  "name": "brandgo-documentos",
+  "private": true,
+  "type": "module",
+  "description": "Web interna de Brandgo. Sitio estático + una función en api/ que etiqueta guiones con Claude.",
+  "dependencies": {
+    "@anthropic-ai/sdk": "1.3.0"
+  }
+}

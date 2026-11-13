@@ -1462,3 +1462,19 @@ body.gui-rodaje #homeLink { display: none; }
   .gui-guide-r { grid-template-columns: 1fr; gap: 2px; }
   .gui-actions .btn { align-self: stretch; justify-content: center; }
 }
+
+/* Etiquetar con Claude */
+.gui-ia-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.gui-ia { background: linear-gradient(135deg, var(--p-violeta), var(--brand)); color: #fff; border-color: transparent; gap: 7px; }
+.gui-ia:hover { border-color: transparent; filter: brightness(1.08); }
+.gui-ia[disabled] { opacity: .85; cursor: progress; }
+.gui-ses { display: flex; gap: 8px; align-items: center; font-size: 12.5px; color: var(--ink-2); margin-left: auto; }
+.gui-ses:empty { display: none; }
+.gui-link { border: 0; background: none; padding: 0; color: var(--brand); font-weight: 600; font-size: 12.5px; text-decoration: underline; text-underline-offset: 2px; }
+@keyframes guiPulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+.gui-busy .gui-text { animation: guiPulse 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .gui-busy .gui-text { animation: none; opacity: .6; } }
+@media (max-width: 700px) {
+  .gui-ia-row .btn { flex: 1 1 auto; justify-content: center; }
+  .gui-ses { margin-left: 0; width: 100%; }
+}
