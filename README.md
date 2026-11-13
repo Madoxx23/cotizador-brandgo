@@ -35,12 +35,11 @@ Todo se guarda solo en el navegador de cada persona (borrador, datos de quien co
 ## 3. Finanzas de la agencia (`finanzas.html`) — acceso restringido
 Solo entra quien tenga una cuenta autorizada (correo y contraseña). Los datos viven en Supabase, protegidos por reglas de acceso de la base de datos; ver **FINANZAS-SEGURIDAD.md** para configurarlo.
 - **Meses:** primera vista. Balance de cada mes en tarjetas (facturado, nómina, otros gastos y neto) con su meta de facturación y un anillo de avance.
-- **Accesos rápidos:** Registrar pago (PG), Registrar gasto (GS) y Pagar nómina (NO).
+- **Accesos rápidos:** Registrar pago, Registrar gasto y Pagar nómina, cada uno con su ícono.
 - **Pagos:** un cobro por cliente y mes, con abonos (50% + 50%, o lo que pague). El estado se calcula solo: Pagado, En proceso o Pendiente. Botón para generar los cobros del mes de todos los clientes de marketing mensual.
 - **Gastos:** categorías con abreviatura — GH gasto hormiga, SE servicios, IN insumos, PR préstamo, AL alquiler, EQ equipos, SU suscripción. Los préstamos pueden salir o entrar a Brandgo; los que entran no cuentan como gasto.
 - **Nómina:** cada persona del equipo con su avatar, salario y estado del mes. Se paga por quincenas (50% el día 15 y el resto después); el estado se calcula solo. Botón para agregar a todo el equipo al mes.
 - **Clientes:** perfil con categoría (MM marketing mensual, CP campaña, SV servicio), valor, día de pago, plan y datos para la cuenta de cobro.
-- **Cartera vencida:** alerta con los cobros cuyo día de pago ya pasó, cuánto deben y hace cuántos días. Las campañas con anticipo no cuentan como vencidas: su saldo se cobra al finalizar (botón Finalizar campaña o fecha para cobrar el saldo).
 - **Apariencia:** interruptor claro, oscuro o automático en todas las páginas. Los PDF siempre salen en claro.
 - **Conexiones:** una cotización aprobada crea el cliente y su cobro en Finanzas; desde un cobro se genera la cuenta de cobro ya llena y, al descargarla, queda anotada en el pago.
 - **Registrado por:** cada pago, gasto y nómina muestra quién lo registró o editó por última vez.
