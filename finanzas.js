@@ -246,6 +246,23 @@
   /* =====================================================================
      PANTALLAS DE ACCESO
      ===================================================================== */
+  /* Jerarquía de color según el valor de cada cliente (de mayor a menor) */
+  const RANGOS = [
+    [5000000, 'violeta', '$5M o más'],
+    [4000000, 'turquesa', '$4M a $5M'],
+    [3000000, 'naranja', '$3M a $4M'],
+    [2000000, 'verde', '$2M a $3M'],
+    [1000000, 'azul', '$1M a $2M'],
+    [700000, 'amarillo', '$700 mil a $1M'],
+    [0, null, 'Menos de $700 mil']
+  ];
+  const rangoDe = v => RANGOS.find(r => Number(v) >= r[0]) || RANGOS[RANGOS.length - 1];
+  function valStyle(color) { const p = color && PALETTES[color]; return p ? { '--c': p.ac, '--c-bg': p.bg, '--c-bd': p.bd } : null; }
+  function valChip(v) { const r = rangoDe(v); return h('span', { class: 'val-chip' + (r[1] ? '' : ' none'), title: 'Rango: ' + r[2], style: valStyle(r[1]) }, money(v)); }
+  function leyendaValor() {
+    return h('div', { class: 'val-legend fin-rise' }, h('span', { class: 'val-legend-k' }, 'Valor del cliente'),
+      RANGOS.slice().reverse().map(r => h('span', { class: 'val-chip' + (r[1] ? '' : ' none'), style: valStyle(r[1]) }, r[2])));
+  }
   function chip(cat, map) { const c = map[cat] || { label: cat, abbr: '?', color: 'violeta' }; const p = PALETTES[c.color]; return h('span', { class: 'fin-chip', title: c.label, style: { '--c': p.ac, '--c-bg': p.bg, '--c-bd': p.bd } }, h('b', null, c.abbr), c.label); }
   function chipAbbr(cat, map) { const c = map[cat]; const p = PALETTES[c.color]; return h('span', { class: 'fin-chip only', title: c.label, style: { '--c': p.ac, '--c-bg': p.bg, '--c-bd': p.bd } }, h('b', null, c.abbr)); }
   function estadoChip(e) { return h('span', { class: 'fin-st ' + ESTADOS[e].cls }, h('i'), ESTADOS[e].label); }
@@ -746,7 +763,7 @@
         sinCobro.length && !range ? h('button', { type: 'button', class: 'btn', onclick: () => generarMensuales(sinCobro) }, `+ Generar ${sinCobro.length} ${sinCobro.length === 1 ? 'cobro mensual' : 'cobros mensuales'}`) : null,
         h('button', { type: 'button', class: 'btn', onclick: () => openCliente() }, icon('mas'), 'Agregar cliente'),
         h('button', { type: 'button', class: 'btn primary', onclick: () => openPago() }, icon('mas'), 'Registrar pago'))));
-    body.append(h('div', { class: 'fin-rise' }, filterBar('pagos', CAT_ING, 'Buscar cliente')));
+    body.append(h('div', { class: 'fin-rise' }, filterBar('pagos', CAT_ING, 'Buscar cliente')), leyendaValor());
     if (!sourceFor('pagos').length) { body.append(h('div', { class: 'block fin-empty fin-rise' }, h('h3', null, 'Sin pagos este mes'), h('p', { class: 'help' }, 'Usa "Registrar pago" o genera los cobros de los clientes de marketing mensual.'))); return; }
     if (!rows.length) { body.append(emptyFiltered()); return; }
     const sum = fn => rows.reduce((s, p) => s + fn(p), 0);
@@ -758,7 +775,7 @@
         return h('tr', { class: S.sel.has(p.id) ? 'picked' : '' },
           selCell(p.id),
           h('td', { class: 'name' }, h('div', { class: 'fin-cell-name' }, avatar(clienteDe(p), 26), h('div', null, h('b', null, clienteDe(p).nombre), h('small', null, [range ? monthLabel(p.mes) : null, p.concepto].filter(Boolean).join(' · ') || CAT_ING[p.categoria].label), autor(p)))),
-          h('td', { class: 'num strong' }, money(p.valor)),
+          h('td', { class: 'num strong' }, valChip(p.valor)),
           h('td', { class: 'num' }, h('div', { class: 'fin-prog-cell' }, h('div', { class: 'fin-prog' }, growBar(av)), h('small', null, av + '%'))),
           h('td', { class: 'num' }, money(pagado(p))),
           h('td', { class: 'num' }, money(Math.max(0, Number(p.valor) - pagado(p)))),
@@ -1013,7 +1030,7 @@
     body.append(h('div', { class: 'fin-tools fin-rise' }, h('h2', { class: 'fin-h2' }, 'Clientes'),
       h('button', { type: 'button', class: 'btn primary', onclick: () => openCliente() }, icon('mas'), 'Nuevo cliente')));
     if (!S.clientes.length) { body.append(h('div', { class: 'block fin-empty fin-rise' }, h('h3', null, 'Aún no hay clientes'), h('p', { class: 'help' }, 'Crea el perfil de cada cliente con su categoría, el valor que representa y su día de pago.'))); return; }
-    body.append(h('div', { class: 'fin-rise' }, filterBar('clientes', CAT_ING, 'Buscar cliente')));
+    body.append(h('div', { class: 'fin-rise' }, filterBar('clientes', CAT_ING, 'Buscar cliente')), leyendaValor());
     const rows = applyFilters('clientes', S.clientes);
     if (!rows.length) { body.append(emptyFiltered()); return; }
     body.append(h('div', { class: 'fin-table-wrap fin-rise' }, h('table', { class: 'fin-table t-clientes' },
@@ -1024,7 +1041,7 @@
           selCell(c.id),
           h('td', { class: 'name' }, h('div', { class: 'fin-cell-name' }, avatar(c, 26), h('div', null, h('b', null, c.nombre), c.activo ? (c.notas ? h('small', null, c.notas) : null) : h('small', null, 'Inactivo')))),
           h('td', null, chip(c.categoria, CAT_ING)),
-          h('td', { class: 'num strong' }, money(c.valor)),
+          h('td', { class: 'num strong' }, valChip(c.valor)),
           h('td', null, c.dia_pago ? h('span', { class: 'fin-date' }, h('i'), 'Día ' + c.dia_pago) : h('span', { class: 'fin-muted' }, '—')),
           h('td', null, p ? estadoChip(estado(p)) : h('span', { class: 'fin-muted' }, 'Sin cobro')),
           h('td', { class: 'acts' }, rowActions('clientes', c, [['Registrar pago', () => openPago({ cliente_id: c.id })], ['Editar', () => openCliente(c)]])));

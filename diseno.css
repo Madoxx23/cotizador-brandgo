@@ -671,3 +671,10 @@ body, .block, .btn, .field, .area, .select, .topbar { transition: background-col
 /* La página ya es blanca: los encabezados de página y barras van sin fondo extra */
 :root:not([data-theme="dark"]) .topbar { background: rgba(255,255,255,.86); }
 :root:not([data-theme="dark"]) .nav { background: rgba(255,255,255,.9); }
+
+/* Jerarquía de valor: el precio de cada cliente en una etiqueta del color de su rango */
+.val-chip { display: inline-flex; align-items: center; height: 22px; padding: 0 7px; border-radius: 5px; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--c); background: var(--c-bg); border: 1px solid var(--c-bd); }
+.val-chip.none { color: var(--ink-2); background: var(--subtle); border-color: var(--line-2); }
+.val-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 2px 0 12px; }
+.val-legend .val-chip { font-weight: 500; font-size: 12.5px; }
+.val-legend-k { font-size: 13px; font-weight: 500; color: var(--ink-2); margin-right: 4px; }

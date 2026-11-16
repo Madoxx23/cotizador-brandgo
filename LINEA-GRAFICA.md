@@ -96,6 +96,23 @@ Cada color tiene tres valores: texto (`--p-x`), fondo (`--p-x-bg`) y borde (`--p
 
 El modo oscuro tiene su propia versión de cada color, más profunda, con el estilo de GitHub.
 
+### Jerarquía de color por valor del cliente (`.val-chip`)
+
+El precio que representa cada cliente va dentro de una etiqueta del color de su rango, para ver de un vistazo cuánto pesa cada uno. Se usa en la columna **Valor** de Pagos y Clientes, con una leyenda encima de la tabla.
+
+| Rango | Color |
+|---|---|
+| $5M o más | Violeta |
+| $4M a $5M | Turquesa |
+| $3M a $4M | Naranja |
+| $2M a $3M | Verde |
+| $1M a $2M | Azul |
+| $700 mil a $1M | Amarillo |
+| Menos de $700 mil | Gris (sin color) |
+
+- La etiqueta es pastel, de 22 px de alto y radio de 5 px, con el número en peso 600 y cifras tabulares.
+- Los rangos se definen una sola vez en `RANGOS` (`finanzas.js`). Para agregar uno nuevo basta con añadir una línea con el valor mínimo, el color y el texto de la leyenda.
+
 ---
 
 ## 4. Medidas
