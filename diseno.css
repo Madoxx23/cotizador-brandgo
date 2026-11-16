@@ -618,3 +618,9 @@ body, .block, .btn, .field, .area, .select, .topbar { transition: background-col
 .item-h .tag { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px 0 8px; border-radius: 8px; font-size: 13px; font-weight: 500; color: var(--ink); background: var(--paper); border: 1px solid var(--btn-bd); box-shadow: var(--btn-shadow); }
 .item-h .tag::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
 .deliv { background: var(--paper) !important; }
+
+/* Botón de color (acciones principales de un módulo): fondo pastel, borde del mismo tono, texto e ícono saturados */
+.btn.tint, :root[data-theme="dark"] .btn.tint { background: var(--c-bg); border-color: var(--c-bd); color: var(--c); box-shadow: none; font-weight: 500; }
+.btn.tint:hover { background: var(--c-bd); border-color: var(--c-bd); }
+.btn.tint .fin-ico, .btn.tint svg { color: var(--c) !important; }
+@media (max-width: 700px) { .fin-quick .btn.tint .fin-ico { display: inline-block; width: 15px; height: 15px; } .fin-quick .btn.tint { flex-direction: column; gap: 3px; min-height: 52px; } }

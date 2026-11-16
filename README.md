@@ -55,6 +55,7 @@ Organizados por **cuenta** (cliente). Dentro de cada cuenta están sus guiones y
 - Requiere correr `supabase/guiones.sql` y `supabase/guiones-ia.sql`, y la variable `ANTHROPIC_API_KEY` en Vercel.
 
 ## Para el equipo técnico
+- `LINEA-GRAFICA.md`: guía de diseño de la web (tokens, medidas y componentes). Todo lo nuevo debe seguirla.
 - `sidebar.js`: barra lateral de navegación (se carga antes de `theme.js` en todas las páginas).
 - `index.html`: inicio. `styles.css`: estilos base (web, diapositivas y documento). `diseno.css`: capa del diseño actual de la web (estilo SaaS minimalista, Inter, botones azules, radios de 12/8/6 px); se carga después de `styles.css` y no cambia los PDF.
 - `app.js`: cotizador. `cobro.js`: cuentas de cobro. `finanzas.js`: finanzas. `common.js`: utilidades compartidas y número a letras.
