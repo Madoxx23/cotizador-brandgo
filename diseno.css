@@ -463,3 +463,158 @@ body, .block, .btn, .field, .area, .select, .topbar { transition: background-col
 }
 @media (prefers-reduced-motion: reduce) { .sb, html.has-sb body { transition: none; } }
 .svc .n, .gui-check span { border-radius: 6px; }
+
+/* =====================================================================
+   AJUSTES 4 · un solo estándar
+   - Todos los botones del mismo tamaño (32 px).
+   - Estados como botones pequeños con punto de color; categorías como etiqueta pastel.
+   - Filtros con el mismo estilo que las pestañas.
+   - Formularios en filas rótulo · valor, como las fichas de Attio.
+   ===================================================================== */
+:root { --sb-w: 224px; --h-ctl: 32px; }
+
+/* Botones: un solo tamaño */
+.btn, .btn.small, .btn.huge { min-height: var(--h-ctl); height: auto; padding: 0 12px; font-size: 13.5px; font-weight: 500; border-radius: 8px; gap: 6px; }
+.btn .fin-ico, .btn svg { width: 15px; height: 15px; }
+.icon-btn { width: var(--h-ctl); height: var(--h-ctl); }
+
+/* Estados (Pagado, En proceso, Pendiente): como los botones, con punto de color */
+.fin-st, :root[data-theme="dark"] .fin-st.ok, :root[data-theme="dark"] .fin-st.mid, :root[data-theme="dark"] .fin-st.no, .fin-st.ok, .fin-st.mid, .fin-st.no {
+  height: 26px; padding: 0 9px 0 8px; gap: 6px; border-radius: 8px; font-size: 13px; font-weight: 500; color: var(--ink);
+  background: var(--paper); border: 1px solid var(--btn-bd); box-shadow: var(--btn-shadow); white-space: nowrap;
+}
+.fin-st i { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); }
+.fin-st.ok i { background: #22C55E; }
+.fin-st.mid i { background: #EAB308; }
+.fin-st.no i { background: #EF4444; }
+.fin-st-btn { border-radius: 8px; }
+/* Categorías: etiqueta pastel sin abreviatura */
+.fin-chip { height: 24px; padding: 0 8px; border-radius: 6px; font-size: 12.5px; font-weight: 500; gap: 0; }
+.fin-chip b { display: none; }
+/* Fechas como texto, sin burbuja */
+.fin-date, :root[data-theme="dark"] .fin-date { background: transparent; border: 0; padding: 0; height: auto; font-size: 13.5px; font-weight: 400; color: var(--ink); gap: 6px; box-shadow: none; }
+.fin-date i { display: none; }
+.fin-dates { gap: 4px 10px; }
+
+/* Filtros (Todos, Pagado, En proceso, Pendiente) = mismo estilo que las pestañas */
+.seg, :root[data-theme="dark"] .seg { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 3px; box-shadow: var(--shadow-sm); gap: 2px; }
+.seg button { height: 28px; padding: 0 10px; border-radius: 8px; font-size: 13.5px; font-weight: 500; color: var(--ink-2); border: 1px solid transparent; }
+.seg button:hover { background: var(--track); color: var(--ink); }
+.seg button[aria-pressed="true"], :root[data-theme="dark"] .seg button[aria-pressed="true"] { background: var(--paper); color: var(--ink); border-color: var(--btn-bd); box-shadow: var(--btn-shadow); }
+:root[data-theme="dark"] .seg button[aria-pressed="true"] { background: #1C1D21; }
+.fin-bar { padding: 3px; }
+.fin-tabs button { height: 28px; }
+
+/* Accesos rápidos: botones estándar */
+.fin-quick { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.fin-qa2 .fin-ico { color: var(--ink-2); }
+
+/* Foto de perfil del cliente (iniciales) */
+.fin-av.ini, :root[data-theme="dark"] .fin-av.ini { background: var(--track); color: var(--ink-2); font-weight: 600; box-shadow: 0 0 0 1px var(--line); letter-spacing: 0; }
+.fin-cell-name { gap: 10px; }
+.fin-cell-name > div { min-width: 0; display: flex; flex-direction: column; }
+.fin-table td.name small { font-size: 12.5px; }
+
+/* Tarjeta de nómina ordenada como una ficha */
+.fin-people { gap: 12px; }
+.fin-person, .fin-person.ok, .fin-person.mid, .fin-person.no, :root[data-theme="dark"] .fin-person, :root[data-theme="dark"] .fin-person.ok {
+  background: var(--paper); border: 1px solid var(--line); box-shadow: var(--shadow-sm); padding: 14px 16px; gap: 12px; border-radius: 12px;
+}
+.fin-person:hover { transform: none; box-shadow: var(--shadow-md); }
+.fin-person-h { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; }
+.fin-person-h b { font-size: 14.5px; font-weight: 600; }
+.fin-person-h small { font-size: 12.5px; color: var(--ink-2); }
+.fin-kv { display: grid; grid-template-columns: 128px minmax(0, 1fr); gap: 8px 12px; margin: 0; padding-top: 12px; border-top: 1px solid var(--line); font-size: 13.5px; align-items: start; }
+.fin-kv dt { display: flex; align-items: center; gap: 7px; color: var(--ink-2); }
+.fin-kv dt .fin-ico { width: 15px; height: 15px; color: var(--ink-3); stroke-width: 1.6; }
+.fin-kv dd { margin: 0; color: var(--ink); min-width: 0; }
+.fin-kv dd b { font-weight: 600; }
+.fin-kv-list { display: flex; flex-direction: column; gap: 2px; }
+.fin-kv-list span { font-size: 13px; }
+.fin-person .fin-prog.big { height: 6px; }
+.fin-person.ok .fin-prog i, .fin-person .fin-prog i { background: var(--p-verde); }
+.fin-person-f { padding-top: 12px; border-top: 1px solid var(--line); }
+.fin-nom-sum { padding: 14px 16px; gap: 10px 24px; }
+.fin-nom-sum span { font-size: 13px; font-weight: 500; }
+.fin-nom-sum b { font-size: 20px; font-weight: 600; letter-spacing: -0.02em; }
+
+/* Formularios: filas rótulo · valor en hojas y en el asistente */
+.fin-sheet-b { padding: 14px 18px 18px; }
+.fin-sheet-h { padding: 16px 18px 12px; }
+.fin-sheet-f { padding: 12px 18px; gap: 8px; }
+.money.small, .money.small:focus-within { min-height: 36px; padding: 0 11px; border-radius: 8px; border-color: var(--btn-bd); box-shadow: var(--btn-shadow); align-items: center; gap: 6px; }
+.money.small span { font-size: 13.5px !important; font-weight: 500 !important; color: var(--ink-3); }
+.money.small input { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+.fin-cats { gap: 6px; }
+.fin-cat, :root[data-theme="dark"] .fin-cat { height: 30px; padding: 0 10px; border-radius: 8px; font-size: 13px; font-weight: 500; background: var(--paper); border: 1px solid var(--btn-bd); box-shadow: var(--btn-shadow); color: var(--ink-2); }
+.fin-cat b { display: none; }
+.fin-cat::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--c, var(--ink-3)); flex: none; }
+.fin-cat:has(img)::before, .gui-form .fin-cat::before { display: none; }
+.fin-cat[aria-checked="true"], :root[data-theme="dark"] .fin-cat[aria-checked="true"] { color: var(--ink); background: var(--c-bg, var(--brand-soft)); border-color: var(--c, var(--brand)); box-shadow: none; }
+@media (min-width: 701px) {
+  .fin-sheet-b .stack > div:has(> label.label:first-child),
+  .fin-sheet-b .stack > div:has(> span.label:first-child),
+  .panel .block > div:has(> label.label:first-child),
+  .panel .stack > div:has(> label.label:first-child) {
+    display: grid; grid-template-columns: 150px minmax(0, 1fr); align-items: center; column-gap: 14px;
+  }
+  .fin-sheet-b .stack > div:has(> label.label:first-child) > .label,
+  .fin-sheet-b .stack > div:has(> span.label:first-child) > .label,
+  .panel .block > div:has(> label.label:first-child) > .label,
+  .panel .stack > div:has(> label.label:first-child) > .label { margin: 0; align-self: center; }
+  .fin-sheet-b .stack > div:has(> .label:first-child) > :not(.label),
+  .panel .block > div:has(> label.label:first-child) > :not(.label),
+  .panel .stack > div:has(> label.label:first-child) > :not(.label) { grid-column: 2; }
+  .fin-sheet-b .stack > div:has(> .label:first-child + textarea) > .label,
+  .panel .block > div:has(> label.label:first-child + textarea) > .label { align-self: start; padding-top: 8px; }
+}
+.panel .block { gap: 10px; }
+.panel .block > .block-h { padding-bottom: 10px; border-bottom: 1px solid var(--line); margin-bottom: 2px; }
+.field.big { font-size: 16px; }
+
+/* Barra lateral más angosta */
+.sb { padding: 8px 8px 10px; }
+.sb-item { height: 32px; font-size: 13.5px; gap: 9px; }
+.sb-item .sb-ico { width: 17px; height: 17px; color: var(--ink-2); }
+.sb-brand b { font-size: 14px; }
+.sb-brand img { width: 24px; height: 24px; border-radius: 6px; }
+
+/* ---------- Celular ---------- */
+@media (max-width: 700px) {
+  /* Barra de pestañas inferior de Finanzas: ícono arriba, texto abajo */
+  .fin-bar, :root[data-theme="dark"] .fin-bar { border-radius: 12px; padding: 3px; }
+  .fin-tabs { gap: 0; }
+  .fin-tabs button, :root[data-theme="dark"] .fin-tabs button, .fin-tabs button.on, :root[data-theme="dark"] .fin-tabs button.on {
+    height: 50px; padding: 0; gap: 3px; flex-direction: column; border: 0; border-radius: 10px; font-size: 10.5px; font-weight: 500;
+    background: transparent !important; box-shadow: none !important; color: var(--ink-2);
+  }
+  .fin-tabs button .fin-ico { width: 22px; height: 22px; }
+  .fin-tabs button.on, :root[data-theme="dark"] .fin-tabs button.on { color: var(--brand); }
+  :root[data-theme="dark"] .fin-tabs { background: rgba(11,12,14,.92); }
+  .fin-month .field { box-shadow: none; }
+  /* Accesos rápidos en tres columnas iguales */
+  .fin-quick { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; gap: 6px; }
+  .fin-quick .btn { padding: 0 6px; font-size: 12.5px; white-space: normal; line-height: 1.15; min-height: 40px; }
+  .fin-quick .btn .fin-ico { display: none; }
+  /* Nómina */
+  .fin-nom-sum { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 12px; }
+  .fin-nom-sum b { font-size: 15px; overflow-wrap: anywhere; }
+  .fin-kv { grid-template-columns: 112px minmax(0, 1fr); }
+  /* Barra superior: sin logo en las páginas internas */
+  .topbar.sub .brand img { display: none; }
+  .topbar-in { gap: 6px; }
+  .sb-show { width: 30px; height: 30px; }
+  /* Filtros a lo ancho */
+  .seg { width: 100%; display: flex; }
+  .seg button { flex: 1; padding: 0 4px; font-size: 13px; }
+  .block-h { flex-wrap: wrap; }
+}
+.fin-people { grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); }
+.fin-kv { grid-template-columns: 104px minmax(0, 1fr); }
+.fin-sheet-f .btn, .fin-sheet-f .btn.huge, .fin-sheet-f .btn.primary { min-height: var(--h-ctl); padding: 0 12px; font-size: 13.5px; }
+/* Tarjetas de servicio de la cuenta de cobro: mismo estilo de ficha */
+.item, :root[data-theme="dark"] .item { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow-sm); padding: 14px 16px 16px; gap: 12px; }
+.item-h { padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.item-h .tag { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px 0 8px; border-radius: 8px; font-size: 13px; font-weight: 500; color: var(--ink); background: var(--paper); border: 1px solid var(--btn-bd); box-shadow: var(--btn-shadow); }
+.item-h .tag::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+.deliv { background: var(--paper) !important; }

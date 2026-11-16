@@ -166,6 +166,8 @@
   /* ---------------- Registrado por ---------------- */
   const miembroDe = uid => (S.miembros || []).find(m => m.user_id === uid) || null;
   function autor(row) {
+    return null; // Oculto por ahora: se reactivará con los perfiles
+    // eslint-disable-next-line no-unreachable
     if (!row || (!row.created_by && !row.updated_by)) return null;
     const c = miembroDe(row.created_by), u = miembroDe(row.updated_by), quien = u || c;
     if (!quien) return null;
@@ -386,9 +388,9 @@
       h('div', { class: 'fin-head' },
         h('div', null, h('p', { class: 'eyebrow' }, 'Finanzas Brandgo'), h('h1', { class: 'q fin-title' }, '¿Qué vas a registrar hoy?')),
         h('div', { class: 'fin-quick' },
-          h('button', { type: 'button', class: 'fin-qa pay', onclick: () => openPago() }, h('b', null, icon('cobrar')), h('span', null, h('strong', null, 'Registrar pago'), h('small', null, 'Un cliente pagó'))),
-          h('button', { type: 'button', class: 'fin-qa exp', onclick: () => openGasto() }, h('b', null, icon('gastar')), h('span', null, h('strong', null, 'Registrar gasto'), h('small', null, 'Salió dinero'))),
-          h('button', { type: 'button', class: 'fin-qa nom', onclick: () => openNomina() }, h('b', null, icon('nominaPago')), h('span', null, h('strong', null, 'Pagar nómina'), h('small', null, 'Quincena o mes completo'))))),
+          h('button', { type: 'button', class: 'btn fin-qa2', onclick: () => openPago() }, icon('cobrar'), 'Registrar pago'),
+          h('button', { type: 'button', class: 'btn fin-qa2', onclick: () => openGasto() }, icon('gastar'), 'Registrar gasto'),
+          h('button', { type: 'button', class: 'btn fin-qa2', onclick: () => openNomina() }, icon('nominaPago'), 'Pagar nómina'))),
       h('div', { class: 'fin-bar' },
         h('nav', { class: 'fin-tabs', 'aria-label': 'Secciones' }, TABS.map(([k, ab, lb]) => h('button', { type: 'button', class: S.tab === k ? 'on' : '', 'aria-current': S.tab === k ? 'page' : null, onclick: () => { S.tab = k; render(); } }, icon(k), h('span', null, lb)))),
         h('div', { class: 'fin-month' },
@@ -755,7 +757,7 @@
         const abonos = (p.abonos || []).slice().sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
         return h('tr', { class: S.sel.has(p.id) ? 'picked' : '' },
           selCell(p.id),
-          h('td', { class: 'name' }, h('div', { class: 'fin-cell-name' }, chipAbbr(p.categoria, CAT_ING), h('div', null, h('b', null, clienteDe(p).nombre), h('small', null, [range ? monthLabel(p.mes) : null, p.concepto].filter(Boolean).join(' · ') || CAT_ING[p.categoria].label), autor(p)))),
+          h('td', { class: 'name' }, h('div', { class: 'fin-cell-name' }, avatar(clienteDe(p), 26), h('div', null, h('b', null, clienteDe(p).nombre), h('small', null, [range ? monthLabel(p.mes) : null, p.concepto].filter(Boolean).join(' · ') || CAT_ING[p.categoria].label), autor(p)))),
           h('td', { class: 'num strong' }, money(p.valor)),
           h('td', { class: 'num' }, h('div', { class: 'fin-prog-cell' }, h('div', { class: 'fin-prog' }, growBar(av)), h('small', null, av + '%'))),
           h('td', { class: 'num' }, money(pagado(p))),
@@ -865,11 +867,13 @@
       return h('article', { class: 'fin-person fin-rise ' + ESTADOS[e].cls, tabindex: 0, role: 'button', 'aria-label': 'Pagar a ' + p.nombre,
         onclick: ev => { if (ev.target.closest('button')) return; if (e !== 'pagado') openNomina({ persona_id: n.persona_id }); else openNominaEdit(n); },
         onkeydown: ev => { if (ev.key === 'Enter' && ev.target === ev.currentTarget) ev.currentTarget.click(); } },
-        h('div', { class: 'fin-person-h' }, h('div', { class: 'fin-av-wrap' }, avatar(p, 64), h('i', { class: 'dot ' + ESTADOS[e].cls })),
-          h('div', null, h('b', null, p.nombre), h('small', null, p.rol || TIPO_NOM[n.tipo].label), autor(n))),
-        h('div', { class: 'fin-person-v' }, h('span', null, money(pagado(n)), h('small', null, ' de ' + money(n.valor))), estadoChip(e)),
+        h('div', { class: 'fin-person-h' }, avatar(p, 36), h('div', null, h('b', null, p.nombre), h('small', null, p.rol || TIPO_NOM[n.tipo].label)), estadoChip(e)),
+        h('dl', { class: 'fin-kv' },
+          h('dt', null, icon('cobrar'), 'Salario'), h('dd', null, money(n.valor)),
+          h('dt', null, icon('pagos'), 'Pagado'), h('dd', null, h('b', null, money(pagado(n))), h('span', { class: 'fin-muted' }, ' · ' + av + '%')),
+          h('dt', null, icon('reloj'), 'Pendiente'), h('dd', null, money(Math.max(0, Number(n.valor) - pagado(n)))),
+          h('dt', null, icon('meses'), 'Pagos'), h('dd', { class: 'fin-kv-list' }, (n.abonos || []).length ? n.abonos.map(a => h('span', null, dateShort(a.fecha) + ' · ' + money(a.valor))) : h('span', { class: 'fin-muted' }, 'Sin pagos todavía'))),
         h('div', { class: 'fin-prog big' }, growBar(av)),
-        h('div', { class: 'fin-abonos' }, (n.abonos || []).length ? n.abonos.map(a => h('span', null, dateShort(a.fecha) + ' · ' + money(a.valor))) : h('span', { class: 'fin-muted' }, 'Sin pagos todavía')),
         h('div', { class: 'fin-person-f' },
           e !== 'pagado' ? h('button', { type: 'button', class: 'btn small primary', onclick: () => openNomina({ persona_id: n.persona_id }) }, pagado(n) ? 'Pagar lo que falta' : 'Pagar 50%') : null,
           h('button', { type: 'button', class: 'btn small', onclick: () => openNominaEdit(n) }, 'Editar'),
@@ -1018,7 +1022,7 @@
         const p = S.pagos.find(x => x.cliente_id === c.id);
         return h('tr', { class: (c.activo ? '' : 'off') + (S.sel.has(c.id) ? ' picked' : '') },
           selCell(c.id),
-          h('td', { class: 'name' }, h('b', null, c.nombre), c.activo ? (c.notas ? h('small', null, c.notas) : null) : h('small', null, 'Inactivo')),
+          h('td', { class: 'name' }, h('div', { class: 'fin-cell-name' }, avatar(c, 26), h('div', null, h('b', null, c.nombre), c.activo ? (c.notas ? h('small', null, c.notas) : null) : h('small', null, 'Inactivo')))),
           h('td', null, chip(c.categoria, CAT_ING)),
           h('td', { class: 'num strong' }, money(c.valor)),
           h('td', null, c.dia_pago ? h('span', { class: 'fin-date' }, h('i'), 'Día ' + c.dia_pago) : h('span', { class: 'fin-muted' }, '—')),

@@ -17,18 +17,18 @@
     home: '<path d="M4 10.5 12 4l8 6.5V19a1.5 1.5 0 0 1-1.5 1.5H15v-5.5H9v5.5H5.5A1.5 1.5 0 0 1 4 19z"/>',
     chev: '<path d="M7 10l5 5 5-5"/>',
     lock: '<rect x="5" y="11" width="14" height="9.5" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
-    // Glifos blancos dentro de los cuadritos de color
-    cotizar: '<path d="M7 4.5h7l4 4V19a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V5.5a1 1 0 0 1 1-1z"/><path d="M9 12.5h6M9 16h4"/>',
-    cobro: '<rect x="3.5" y="6.5" width="17" height="11" rx="2"/><circle cx="12" cy="12" r="2.4"/>',
-    finanzas: '<path d="M5 19.5V11M10 19.5V6M15 19.5v-6M20 19.5V9"/>',
-    guiones: '<rect x="3.5" y="7" width="12" height="10.5" rx="2"/><path d="M15.5 11l5-3v9l-5-3"/>',
+    // Íconos de línea, sin color (como Attio)
+    cotizar: '<path d="M14 3.5H7.5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V8z"/><path d="M14 3.5V8h4.5M9 12.5h6M9 16h4"/>',
+    cobro: '<rect x="3" y="6" width="18" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.4"/><path d="M6.5 9.5v5M17.5 9.5v5"/>',
+    finanzas: '<path d="M4 20h16"/><path d="M6.5 16.5V12M11 16.5V7.5M15.5 16.5v-6M20 16.5V9.5"/>',
+    guiones: '<rect x="3" y="6.5" width="12.5" height="11" rx="2.2"/><path d="M15.5 10.5l5-3v9l-5-3"/>',
     help: '<circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.4a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.7M12 17h.01"/>'
   };
   const TOOLS = [
-    ['cotizador.html', 'Cotizar una campaña', 'cotizar', '#F2752B'],
-    ['cuenta-de-cobro.html', 'Cuentas de cobro', 'cobro', '#2F6BDE'],
-    ['finanzas.html', 'Finanzas', 'finanzas', '#7C5CE6', true],
-    ['guiones.html', 'Guiones de rodaje', 'guiones', '#1FA463']
+    ['cotizador.html', 'Cotizar una campaña', 'cotizar'],
+    ['cuenta-de-cobro.html', 'Cuentas de cobro', 'cobro'],
+    ['finanzas.html', 'Finanzas', 'finanzas', true],
+    ['guiones.html', 'Guiones de rodaje', 'guiones']
   ];
 
   function current() {
@@ -57,8 +57,8 @@
         <div class="sb-sec" id="sbTools">
           <button type="button" class="sb-sec-h" aria-expanded="true">${svg(I.chev, 'sb-chev')}Herramientas</button>
           <div class="sb-sec-b">
-            ${TOOLS.map(([href, label, ic, color, lock]) => `<a class="sb-item${here === href ? ' on' : ''}" href="${href}"${here === href ? ' aria-current="page"' : ''}>
-              <span class="sb-sq" style="background:${color}">${svg(I[ic], 'sb-gl')}</span><span>${label}</span>${lock ? svg(I.lock, 'sb-lock') : ''}</a>`).join('')}
+            ${TOOLS.map(([href, label, ic, lock]) => `<a class="sb-item${here === href ? ' on' : ''}" href="${href}"${here === href ? ' aria-current="page"' : ''}>
+              ${svg(I[ic])}<span>${label}</span>${lock ? svg(I.lock, 'sb-lock') : ''}</a>`).join('')}
           </div>
         </div>
       </nav>
@@ -72,7 +72,7 @@
 
     const logo = aside.querySelector('#sbLogo');
     const setLogo = () => { if (window.BG && window.BG.A) logo.src = window.BG.A.logo; };
-    setLogo(); if (!logo.src) window.addEventListener('load', setLogo);
+    let tries = 0; const t = setInterval(() => { setLogo(); if (logo.getAttribute('src') || ++tries > 40) clearInterval(t); }, 50); setLogo();
 
     aside.querySelector('.sb-hide').addEventListener('click', () => { if (isMobile()) openMobile(false); else setClosed(true); });
     const sec = aside.querySelector('#sbTools .sb-sec-h');

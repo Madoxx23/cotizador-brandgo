@@ -42,7 +42,7 @@ Solo entra quien tenga una cuenta autorizada (correo y contraseña). Los datos v
 - **Clientes:** perfil con categoría (MM marketing mensual, CP campaña, SV servicio), valor, día de pago, plan y datos para la cuenta de cobro.
 - **Apariencia:** interruptor claro, oscuro o automático en todas las páginas. Los PDF siempre salen en claro.
 - **Conexiones:** una cotización aprobada crea el cliente y su cobro en Finanzas; desde un cobro se genera la cuenta de cobro ya llena y, al descargarla, queda anotada en el pago.
-- **Registrado por:** cada pago, gasto y nómina muestra quién lo registró o editó por última vez.
+- **Registrado por:** oculto por ahora; se reactivará con los perfiles (los datos se siguen guardando).
 - **Resumen:** saldo neto (facturado − nómina − gastos), lo recibido, lo que falta por cobrar, gráficas por categoría y exportación a PDF.
 
 ## 4. Guiones de rodaje (`guiones.html`)
