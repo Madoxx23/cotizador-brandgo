@@ -950,12 +950,12 @@
       const r = S.nomina.find(n => n.persona_id === p.id && n.mes === f.mes);
       const st = r ? estado(r) : 'pendiente';
       return h('button', { type: 'button', role: 'radio', class: 'fin-pick-p', 'aria-checked': f.persona_id === p.id ? 'true' : 'false', onclick: e => { f.persona_id = p.id; f.modo = null; f.fechaTocada = false; picker.querySelectorAll('.fin-pick-p').forEach(b => b.setAttribute('aria-checked', b === e.currentTarget ? 'true' : 'false')); draw(); } },
-        h('div', { class: 'fin-av-wrap' }, avatar(p, 48), h('i', { class: 'dot ' + ESTADOS[st].cls })), h('b', null, p.nombre.split(' ')[0]), h('small', null, ESTADOS[st].label));
+        avatar(p, 28), h('span', { class: 'fin-pick-n' }, h('b', null, p.nombre.split(' ')[0]), h('small', null, p.rol || '')), estadoChip(st));
     }));
     fechaIn.addEventListener('change', () => { f.fechaTocada = true; });
     const mesIn = h('input', { type: 'month', class: 'field', id: 'n-mes', value: f.mes.slice(0, 7), onchange: async e => { if (!e.target.value) return; f.mes = e.target.value + '-01'; if (f.mes !== S.mes) { S.mes = f.mes; await load(); render(); } f.modo = null; f.fechaTocada = false; draw(); } });
-    const content = h('div', { class: 'stack' }, h('div', null, h('span', { class: 'label' }, '¿A quién?'), picker),
-      h('div', { class: 'grid2' }, lbl('Mes de la nómina', 'n-mes', mesIn), lbl('Fecha del pago', 'n-fecha', fechaIn)), amountBox, info, errEl);
+    const content = h('div', { class: 'stack' }, h('div', { class: 'stacked' }, h('span', { class: 'label' }, '¿A quién?'), picker),
+      lbl('Mes de la nómina', 'n-mes', mesIn), lbl('Fecha del pago', 'n-fecha', fechaIn), amountBox, info, errEl);
     draw();
     const save = h('button', { type: 'button', class: 'btn primary huge', onclick: async () => {
       errEl.textContent = '';
