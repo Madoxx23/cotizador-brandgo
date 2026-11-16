@@ -40,19 +40,24 @@ Todo vive en `diseno.css`, que se carga después de `styles.css` en cada página
 
 ## 3. Color
 
+### Colorimetría general (referencia: Attio)
+
+La colorimetría de toda la web sigue la de Attio: **el área de trabajo es blanca**, la barra lateral es gris muy claro, los bordes son casi invisibles y el color solo vive en etiquetas pastel con texto saturado. Las tarjetas se distinguen por su borde de 1 px, no por un fondo distinto.
+
 ### Neutros
 
 | Token | Claro | Oscuro | Uso |
 |---|---|---|---|
-| `--bg` | `#F7F7F8` | `#0B0C0E` | Fondo de la página |
+| `--bg` | `#FFFFFF` | `#0B0C0E` | Fondo de la página (área de trabajo blanca) |
 | `--paper` | `#FFFFFF` | `#111214` | Tarjetas, tablas y hojas |
-| `--subtle` | `#FAFAFB` | `#15161A` | Hover de filas y pies de hoja |
-| `--track` | `#F2F2F4` | `#1A1B1F` | Fondo de controles y hover de botones sin borde |
-| `--ink` | `#1C1D1F` | `#E8EAED` | Texto principal |
-| `--ink-2` | `#6B6F76` | `#9EA2A9` | Rótulos y texto secundario |
-| `--ink-3` | `#9A9DA3` | `#6B6F76` | Metadatos e íconos |
-| `--line` | `#E8E9EC` | `#222429` | Bordes |
-| `--line-2` | `#DCDDE1` | `#2C2F35` | Bordes más marcados |
+| `--sb-bg` | `#FAFAFA` | `#0E0F11` | Barra lateral |
+| `--subtle` | `#FAFAFA` | `#15161A` | Hover de filas y pies de hoja |
+| `--track` | `#F4F4F5` | `#1A1B1F` | Fondo de controles y hover de botones sin borde |
+| `--ink` | `#1F2023` | `#E8EAED` | Texto principal |
+| `--ink-2` | `#6F737A` | `#9EA2A9` | Rótulos y texto secundario |
+| `--ink-3` | `#A1A4AA` | `#6B6F76` | Metadatos e íconos |
+| `--line` | `#EDEEF0` | `#222429` | Bordes y separadores de tabla |
+| `--line-2` | `#E2E3E6` | `#2C2F35` | Bordes más marcados |
 
 ### Acento
 
@@ -60,22 +65,34 @@ Todo vive en `diseno.css`, que se carga después de `styles.css` en cada página
 |---|---|---|---|
 | `--primary` | `#0071E3` (azul Apple) | `#E8EAED` (botón claro) | Botón principal |
 | `--brand` | `#0071E3` | `#4C8DFF` | Casillas marcadas, foco y barras de avance |
+| `--link` | `#266DF0` | `#6EA2FF` | Enlaces y etiquetas de enlace (dominios, correos) |
+| `--ai-tint` | `#F8F6FF` | `#16142A` | Fondo de una columna destacada o calculada |
 
 En modo claro **no se usan botones negros**.
 
 ### Paleta pastel (etiquetas, botones de color y estados)
 
-Cada color tiene tres valores: texto (`--p-x`), fondo (`--p-x-bg`) y borde (`--p-x-bd`).
+Cada color tiene tres valores: texto (`--p-x`), fondo (`--p-x-bg`) y borde (`--p-x-bd`). Los colores son los de las etiquetas de Attio (Excellent, Good, Medium, Low y los rangos de ARR).
 
-| Color | Texto | Fondo | Borde | Uso típico |
-|---|---|---|---|---|
-| Verde | `#1A8A4E` | `#E6F7EC` | `#C3EBD1` | Pagado, éxito, nómina |
-| Azul | `#2F6BDE` | `#EEF4FE` | `#BDD2FA` | Pagos, marketing mensual |
-| Violeta | `#6646D6` | `#F2EEFE` | `#DCD2FB` | Gastos |
-| Amarillo | `#7A6500` | `#FEF8D9` | `#F4E18E` | En proceso |
-| Rosa | `#C2309F` | `#FCEBFA` | `#F3C7EB` | Pendiente, evitar |
-| Naranja | `#E2561F` | `#FFF0E8` | `#FBD5C2` | Campañas, producción |
-| Turquesa | `#0E7C8F` | `#E6F6F8` | `#BCE3EA` | Servicios |
+| Color | Texto | Fondo | Borde | Equivale en Attio a | Uso típico |
+|---|---|---|---|---|---|
+| Violeta | `#6A3FD6` | `#EFEAFE` | `#E0D6FD` | «Excellent» | Gastos, destacados |
+| Verde | `#23843F` | `#E4F6E8` | `#C8ECD1` | «Good» | Pagado, éxito, nómina |
+| Azul | `#2459C7` | `#E6EFFE` | `#CBDCFB` | «Medium» | Pagos, marketing mensual |
+| Naranja | `#C2510F` | `#FDEEE3` | `#F8D8C1` | «Low» | Campañas, alertas suaves |
+| Turquesa | `#0E7A86` | `#DDF4F6` | `#BDE7EC` | rangos de ARR | Servicios |
+| Amarillo | `#8A6100` | `#FDF3CF` | `#F4E2A0` | rangos de ARR | En proceso |
+| Rosa | `#C02F8E` | `#FCEAF6` | `#F4CCE6` | — | Pendiente, evitar |
+
+### Tipos de etiqueta
+
+| Clase | Aspecto | Uso |
+|---|---|---|
+| `.fin-chip` / `.chip` + color | Fondo pastel, borde del mismo tono, texto saturado, 22 px de alto y radio de 5 px | Categorías, rangos y niveles |
+| `.chip-link` | Fondo blanco, borde azul suave y texto azul | Dominios, correos y enlaces |
+| `.chip-rec` | Fondo blanco, borde gris y un ícono o avatar de 14 px | Registros relacionados (cliente, guion, cobro) |
+| `.fin-st` | Blanco como un botón, con un punto de color | Estados (Pagado, En proceso, Pendiente) |
+| `.col-tint` | Fondo violeta muy suave en toda la columna | Columnas calculadas o destacadas |
 
 El modo oscuro tiene su propia versión de cada color, más profunda, con el estilo de GitHub.
 
@@ -88,7 +105,7 @@ El modo oscuro tiene su propia versión de cada color, más profunda, con el est
 | Alto de botones, campos y pestañas | **32 px** (`--h-ctl`); 28 px dentro de barras de pestañas |
 | Radio de tarjetas, tablas, hojas y paneles | **12 px** (`--r-card`) |
 | Radio de botones, campos y pestañas | **8 px** |
-| Radio de etiquetas pastel | **6 px** |
+| Radio de etiquetas pastel | **5 px** |
 | Radio de los cuadritos de número (01, 02…) | 6 px |
 | Relleno de tarjeta | 14–16 px |
 | Separación entre tarjetas | 12–16 px |
@@ -126,7 +143,7 @@ h('button', { class: 'btn tint', style: { '--c': 'var(--p-azul)', '--c-bg': 'var
 Tienen el mismo aspecto que un botón blanco de 26 px, con un **punto de color** delante del texto: verde para Pagado, amarillo para En proceso y rojo para Pendiente. No son píldoras de color.
 
 ### Etiquetas de categoría (`.fin-chip`)
-Fondo pastel, borde y texto del mismo tono, 24 px de alto y radio de 6 px. Llevan solo el nombre, sin abreviaturas.
+Fondo pastel, borde y texto del mismo tono, 22 px de alto y radio de 5 px. Llevan solo el nombre, sin abreviaturas.
 
 ### Pestañas y filtros (`.fin-tabs`, `.seg`)
 Van dentro de una tarjeta blanca con radio de 12 px y 3 px de relleno. Cada opción mide 28 px y tiene un ícono de línea de 16 px más el texto. La opción activa es blanca, con borde suave y sombra, igual que un botón. **Pestañas y filtros se ven idénticos.**

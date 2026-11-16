@@ -624,3 +624,50 @@ body, .block, .btn, .field, .area, .select, .topbar { transition: background-col
 .btn.tint:hover { background: var(--c-bd); border-color: var(--c-bd); }
 .btn.tint .fin-ico, .btn.tint svg { color: var(--c) !important; }
 @media (max-width: 700px) { .fin-quick .btn.tint .fin-ico { display: inline-block; width: 15px; height: 15px; } .fin-quick .btn.tint { flex-direction: column; gap: 3px; min-height: 52px; } }
+
+/* =====================================================================
+   COLORIMETRÍA (referencia Attio)
+   Área de trabajo blanca, barra lateral gris muy claro, bordes muy suaves
+   y etiquetas pastel con texto saturado. Solo modo claro; el oscuro se mantiene.
+   ===================================================================== */
+:root:not([data-theme="dark"]) {
+  --bg: #FFFFFF;
+  --paper: #FFFFFF;
+  --subtle: #FAFAFA;
+  --track: #F4F4F5;
+  --ink: #1F2023;
+  --ink-2: #6F737A;
+  --ink-3: #A1A4AA;
+  --line: #EDEEF0;
+  --line-2: #E2E3E6;
+  --sb-bg: #FAFAFA;
+  --link: #266DF0;
+  --ai-tint: #F8F6FF;
+
+  /* Etiquetas: fondo pastel + borde del mismo tono + texto saturado */
+  --p-violeta: #6A3FD6;  --p-violeta-bg: #EFEAFE;  --p-violeta-bd: #E0D6FD;  --p-violeta-ln: #E8E1FD;
+  --p-naranja: #C2510F;  --p-naranja-bg: #FDEEE3;  --p-naranja-bd: #F8D8C1;  --p-naranja-ln: #FBE4D3;
+  --p-verde: #23843F;    --p-verde-bg: #E4F6E8;    --p-verde-bd: #C8ECD1;    --p-verde-ln: #D6F1DD;
+  --p-azul: #2459C7;     --p-azul-bg: #E6EFFE;     --p-azul-bd: #CBDCFB;     --p-azul-ln: #D9E6FD;
+  --p-turquesa: #0E7A86; --p-turquesa-bg: #DDF4F6; --p-turquesa-bd: #BDE7EC; --p-turquesa-ln: #CDEEF1;
+  --p-amarillo: #8A6100; --p-amarillo-bg: #FDF3CF; --p-amarillo-bd: #F4E2A0; --p-amarillo-ln: #F9EBB8;
+  --p-rosa: #C02F8E;     --p-rosa-bg: #FCEAF6;     --p-rosa-bd: #F4CCE6;     --p-rosa-ln: #F8DBEE;
+}
+:root[data-theme="dark"] { --link: #6EA2FF; --ai-tint: #16142A; }
+
+/* Etiquetas pastel más finas, como en la referencia */
+.fin-chip, .chip { height: 22px; padding: 0 7px; border-radius: 5px; font-size: 12.5px; }
+
+/* Etiqueta de enlace (dominios, correos): texto azul con borde azul suave */
+.chip-link { display: inline-flex; align-items: center; height: 22px; padding: 0 7px; border-radius: 5px; font-size: 12.5px; font-weight: 500;
+  color: var(--link); background: var(--paper); border: 1px solid var(--p-azul-bd); text-decoration: none; white-space: nowrap; }
+/* Etiqueta de registro (cliente, guion, cobro relacionado): blanca con borde gris y un ícono pequeño */
+.chip-rec { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 7px; border-radius: 5px; font-size: 12.5px; font-weight: 500;
+  color: var(--ink); background: var(--paper); border: 1px solid var(--line-2); white-space: nowrap; }
+.chip-rec img, .chip-rec .fin-av { width: 14px !important; height: 14px !important; font-size: 7px !important; }
+/* Columna destacada (por ejemplo, un cálculo automático): fondo violeta muy suave */
+.col-tint { background: var(--ai-tint) !important; }
+
+/* La página ya es blanca: los encabezados de página y barras van sin fondo extra */
+:root:not([data-theme="dark"]) .topbar { background: rgba(255,255,255,.86); }
+:root:not([data-theme="dark"]) .nav { background: rgba(255,255,255,.9); }
