@@ -158,6 +158,7 @@ h('button', { class: 'btn tint', style: { '--c': 'var(--p-azul)', '--c-bg': 'var
 
 ### Estados (`.fin-st`)
 Tienen el mismo aspecto que un botón blanco de 26 px, con un **punto de color** delante del texto: verde para Pagado, amarillo para En proceso y rojo para Pendiente. No son píldoras de color.
+Cuando el estado se puede cambiar desde la tabla (por ejemplo, Pagado o Pendiente en Gastos), se usa la misma etiqueta convertida en **desplegable** (`.st-sel`), con una flecha a la derecha. El cambio nunca se hace con un clic directo.
 
 ### Etiquetas de categoría (`.fin-chip`)
 Fondo pastel, borde y texto del mismo tono, 22 px de alto y radio de 5 px. Llevan solo el nombre, sin abreviaturas.

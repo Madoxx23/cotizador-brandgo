@@ -843,7 +843,7 @@
           h('td', { class: 'name' }, h('b', null, g.concepto), g.movimiento === 'entrada' ? h('small', null, 'Entra a Brandgo · no suma como gasto') : (g.notas ? h('small', null, g.notas) : null), autor(g)),
           h('td', null, chip(g.categoria, CAT_GAS)),
           h('td', null, dateBubble(g.fecha)),
-          h('td', { class: 'st' }, h('button', { type: 'button', class: 'fin-st-btn', title: estGasto(g) === 'pagado' ? 'Marcar como pendiente' : 'Marcar como pagado', onclick: () => toggleGasto(g) }, estadoChip(estGasto(g)))),
+          h('td', { class: 'st' }, estadoSelect(g)),
           h('td', { class: 'num strong' }, (g.movimiento === 'entrada' ? '+' : '') + money(g.valor)),
           h('td', { class: 'acts' }, rowActions('gastos', g, [['Editar', () => openGasto(g)]]))))))));
     });
@@ -1214,6 +1214,21 @@
   /* ---------- Estado del gasto: pendiente o pagado ---------- */
   const estGasto = g => (g.estado === 'pendiente' ? 'pendiente' : 'pagado');
   const errEstado = e => /estado/i.test((e && (e.message || e.details)) || '') ? 'Falta activar el estado de gastos: corre supabase/gastos-estado.sql en Supabase.' : 'No se pudo guardar. Revisa tu conexión e intenta de nuevo.';
+  // Desplegable de estado en la tabla: Pagado o Pendiente
+  function estadoSelect(g) {
+    const cur = estGasto(g);
+    const sel = h('select', { 'aria-label': 'Estado de ' + g.concepto, onchange: e => cambiarEstadoGasto(g, e.target.value, wrap) },
+      h('option', { value: 'pagado', selected: cur === 'pagado' }, 'Pagado'), h('option', { value: 'pendiente', selected: cur === 'pendiente' }, 'Pendiente'));
+    const wrap = h('label', { class: 'fin-st st-sel ' + ESTADOS[cur].cls }, h('i'), sel,
+      h('span', { class: 'st-chev', 'aria-hidden': 'true', html: '<svg viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg>' }));
+    return wrap;
+  }
+  async function cambiarEstadoGasto(g, nuevo, wrap) {
+    if (nuevo === estGasto(g)) return;
+    wrap.className = 'fin-st st-sel ' + ESTADOS[nuevo].cls;
+    try { await store.update('gastos', g.id, { estado: nuevo }); toast(nuevo === 'pagado' ? 'Gasto marcado como pagado' : 'Gasto marcado como pendiente'); await refresh(); }
+    catch (e) { console.error(e); toast(errEstado(e)); await refresh(); }
+  }
   async function toggleGasto(g) {
     const nuevo = estGasto(g) === 'pagado' ? 'pendiente' : 'pagado';
     try { await store.update('gastos', g.id, { estado: nuevo }); toast(nuevo === 'pagado' ? 'Gasto marcado como pagado' : 'Gasto marcado como pendiente'); await refresh(); }
