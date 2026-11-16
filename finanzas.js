@@ -337,6 +337,28 @@
     gastar: '<path d="M6.2 3.6h11.6v16.8l-2.1-1.4-1.9 1.4-1.8-1.4-1.8 1.4-1.9-1.4-2.1 1.4z"/><path d="M9.2 8h5.6M9.2 11.4h5.6M9.2 14.8h3.4"/>',
     nominaPago: '<circle cx="9" cy="7.8" r="3.2"/><path d="M3.4 19.2c.6-3.2 2.8-5 5.6-5 1.3 0 2.4.4 3.3 1"/><circle cx="17.2" cy="16.4" r="4"/><path d="M17.2 14.3v4.2M15.9 15.3h1.9a.8.8 0 0 1 0 1.6h-1.3a.8.8 0 0 0 0 1.6h1.9"/>'
   };
+  // Íconos de los encabezados de tabla (uno por columna, como en Attio)
+  const TH_ICONS = {
+    Cliente: '<rect x="5" y="3.5" width="14" height="17" rx="2"/><path d="M9 7.5h2M13 7.5h2M9 11h2M13 11h2M10 20.5v-3.5h4v3.5"/>',
+    Concepto: '<path d="M14 3.5H7.5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V8z"/><path d="M14 3.5V8h4.5M9 12.5h6M9 16h4"/>',
+    'Categoría': '<path d="M3.5 12.3V5.5a2 2 0 0 1 2-2h6.8l8.2 8.2a2 2 0 0 1 0 2.8l-6 6a2 2 0 0 1-2.8 0z"/><circle cx="8.3" cy="8.3" r="1.4"/>',
+    Fecha: '<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M8 3v4M16 3v4M3.5 10h17"/>',
+    'Día de pago': '<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M8 3v4M16 3v4M3.5 10h17"/>',
+    Estado: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3"/>',
+    Valor: '<circle cx="12" cy="12" r="8.5"/><path d="M14.5 9.2c-.4-.9-1.4-1.5-2.5-1.5-1.5 0-2.6.8-2.6 2s1.1 1.7 2.6 2 2.6.8 2.6 2.1-1.1 2-2.6 2c-1.2 0-2.2-.6-2.6-1.5M12 6v1.7M12 16.3V18"/>',
+    Avance: '<path d="M4 18.5h16"/><path d="M6 15l4-4 3 3 5-6"/>',
+    Recibido: '<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14"/>',
+    'Por cobrar': '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+    'Pagos realizados': '<path d="M8.5 6.5h11M8.5 12h11M8.5 17.5h11"/><circle cx="4.8" cy="6.5" r="1" fill="currentColor"/><circle cx="4.8" cy="12" r="1" fill="currentColor"/><circle cx="4.8" cy="17.5" r="1" fill="currentColor"/>',
+    _mes: '<path d="M4 12.5l4.5 4.5L20 6.5"/>'
+  };
+  function thLabel(c) {
+    if (!c) return c;
+    const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('class', 'fin-ico th-ico'); s.setAttribute('aria-hidden', 'true');
+    s.innerHTML = TH_ICONS[c] || TH_ICONS._mes;
+    return h('span', { class: 'th-in' }, s, c);
+  }
   function icon(name) {
     const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('class', 'fin-ico'); s.setAttribute('aria-hidden', 'true');
@@ -727,7 +749,7 @@
     if (!rows.length) { body.append(emptyFiltered()); return; }
     const sum = fn => rows.reduce((s, p) => s + fn(p), 0);
     body.append(h('div', { class: 'fin-table-wrap fin-rise' }, h('table', { class: 'fin-table t-pagos' },
-      h('thead', null, h('tr', null, selHead(rows.map(r => r.id)), ...['Cliente', 'Valor', 'Avance', 'Recibido', 'Por cobrar', 'Pagos realizados', 'Estado', ''].map((c, i) => h('th', { class: i >= 1 && i <= 4 ? 'num' : '' }, c)))),
+      h('thead', null, h('tr', null, selHead(rows.map(r => r.id)), ...['Cliente', 'Valor', 'Avance', 'Recibido', 'Por cobrar', 'Pagos realizados', 'Estado', ''].map((c, i) => h('th', { class: i >= 1 && i <= 4 ? 'num' : '' }, thLabel(c))))),
       h('tbody', null, rows.map(p => {
         const e = estado(p), av = avance(p);
         const abonos = (p.abonos || []).slice().sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
@@ -796,7 +818,7 @@
       const pend = list.filter(g => estGasto(g) === 'pendiente' && g.movimiento !== 'entrada');
       body.append(h('h3', { class: 'fin-h3 fin-rise' }, title, h('span', null, list.length + (list.length === 1 ? ' gasto · ' : ' gastos · ') + money(tot) + (pend.length ? ` · ${pend.length} por pagar (${money(pend.reduce((s, g) => s + Number(g.valor), 0))})` : ''))));
       body.append(h('div', { class: 'fin-table-wrap fin-rise' }, h('table', { class: 'fin-table t-gastos' },
-        h('thead', null, h('tr', null, selHead(list.map(g => g.id)), ...['Concepto', 'Categoría', 'Fecha', 'Estado', 'Valor', ''].map((c, i) => h('th', { class: i === 4 ? 'num' : '' }, c)))),
+        h('thead', null, h('tr', null, selHead(list.map(g => g.id)), ...['Concepto', 'Categoría', 'Fecha', 'Estado', 'Valor', ''].map((c, i) => h('th', { class: i === 4 ? 'num' : '' }, thLabel(c))))),
         h('tbody', null, list.map(g => h('tr', { class: S.sel.has(g.id) ? 'picked' : '' },
           selCell(g.id),
           h('td', { class: 'name' }, h('b', null, g.concepto), g.movimiento === 'entrada' ? h('small', null, 'Entra a Brandgo · no suma como gasto') : (g.notas ? h('small', null, g.notas) : null), autor(g)),
@@ -991,7 +1013,7 @@
     const rows = applyFilters('clientes', S.clientes);
     if (!rows.length) { body.append(emptyFiltered()); return; }
     body.append(h('div', { class: 'fin-table-wrap fin-rise' }, h('table', { class: 'fin-table t-clientes' },
-      h('thead', null, h('tr', null, selHead(rows.map(c => c.id)), ...['Cliente', 'Categoría', 'Valor', 'Día de pago', monthLabel(S.mes), ''].map((c, i) => h('th', { class: i === 2 ? 'num' : '' }, c)))),
+      h('thead', null, h('tr', null, selHead(rows.map(c => c.id)), ...['Cliente', 'Categoría', 'Valor', 'Día de pago', monthLabel(S.mes), ''].map((c, i) => h('th', { class: i === 2 ? 'num' : '' }, thLabel(c))))),
       h('tbody', null, rows.map(c => {
         const p = S.pagos.find(x => x.cliente_id === c.id);
         return h('tr', { class: (c.activo ? '' : 'off') + (S.sel.has(c.id) ? ' picked' : '') },
