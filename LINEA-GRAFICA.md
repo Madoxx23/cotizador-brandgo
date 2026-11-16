@@ -199,6 +199,16 @@ Van en un cuadrito de 6 px de radio con **borde del color del servicio**, fondo 
 - Abajo quedan el interruptor claro/oscuro y el espacio de «Perfil y ajustes».
 - En el celular es un cajón que se abre desde la barra superior.
 
+### Menús, calendario y selector de mes (`controles.js`)
+En computador no se usan las ventanas nativas del navegador. Todos los `<select>`, `<input type="date">` e `<input type="month">` abren un menú propio, sin cambiar el HTML:
+- **Menú:** tarjeta blanca con radio de 12 px, borde de 1 px y sombra; opciones de 32 px con hover gris; la opción elegida lleva un check azul. Si es un estado, cada opción lleva su punto de color.
+- **Calendario:** el mes en peso 600 con flechas en botones de 28 px; la semana empieza el lunes; días de 32 px con radio de 8 px. Hoy lleva borde y el día elegido va relleno en azul. Abajo están «Borrar» y «Hoy».
+- **Selector de mes:** el año con flechas y una cuadrícula de 3 × 4 meses. Abajo está «Este mes».
+- Los campos de fecha muestran un ícono de calendario gris propio, y los de lista una flecha gris.
+- Se manejan con teclado (Enter abre, flechas recorren, Escape cierra sin cerrar la hoja de atrás).
+- En el celular se deja el selector nativo del teléfono.
+
+
 ### Íconos
 Son de línea, de 15–18 px, con trazo de 1.5–1.6 y en color gris (`--ink-2` o `--ink-3`). Solo toman color dentro de un botón de color o de una etiqueta.
 
