@@ -85,11 +85,12 @@
     S.paso = 'descargar';
   }
 
-  // Al descargar una cuenta que vino de Finanzas, se anota en ese pago (usa la sesión de Finanzas de esta pestaña)
+  // Al descargar una cuenta que vino de Finanzas, se anota en ese pago (usa la sesión única de Brandgo)
   async function registrarEnFinanzas() {
     const cfg = window.FINANZAS_CONFIG || {};
     if (!S.pagoId || !window.supabase || !cfg.supabaseUrl) return 'skip';
-    const sb = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, { auth: { storage: window.sessionStorage, persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } });
+    const sb = window.BGSesion && window.BGSesion.cliente();
+    if (!sb) return 'skip';
     const { data: ses } = await sb.auth.getSession();
     if (!ses || !ses.session) return 'nosession';
     const r = await sb.from('pagos').select('cuentas').eq('id', S.pagoId).single();

@@ -60,6 +60,9 @@ Personas, empresas y negocios con atributos propios, listas, vistas en tabla o k
 - Esta web lo muestra en su propio dominio: `vercel.json` reescribe `/crm` y `/crm/*` hacia ese proyecto, así que la dirección no cambia. Por eso `/crm` no lleva `Referrer-Policy: no-referrer` (las server actions de Next necesitan el encabezado Origin).
 - Comparte la línea gráfica, la barra lateral y el tema claro/oscuro (misma clave `brandgo-tema`).
 
+### Acceso único
+Finanzas, Cuentas de cobro, Guiones y el CRM usan el mismo proyecto de Supabase y **una sola sesión**: `sesion.js` la guarda en una cookie del dominio (`sb-<proyecto>-auth-token`) con el mismo formato que el CRM, así que se entra una vez para todo. Dura hasta cerrar el navegador. Las páginas crean su cliente con `BGSesion.cliente()`, nunca con su propio `createClient`.
+
 ## Para el equipo técnico
 - `LINEA-GRAFICA.md`: guía de diseño de la web (tokens, medidas y componentes). Todo lo nuevo debe seguirla.
 - `controles.js`: menús, calendario y selector de mes propios (reemplazan las ventanas del navegador en computador).

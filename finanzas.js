@@ -58,9 +58,7 @@
   const isDemo = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) && new URLSearchParams(location.search).has('demo');
 
   function supabaseStore() {
-    const sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, {
-      auth: { storage: window.sessionStorage, persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
-    });
+    const sb = window.BGSesion.cliente(); // sesión única de Brandgo (sesion.js)
     const ok = r => { if (r.error) throw r.error; return r.data; };
     return {
       async session() { return ok(await sb.auth.getSession()).session; },
