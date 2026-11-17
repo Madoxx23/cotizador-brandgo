@@ -439,6 +439,12 @@ body, .block, .btn, .field, .area, .select, .topbar { transition: background-col
 .sb-sec-b { display: flex; flex-direction: column; gap: 2px; margin-top: 2px; }
 .sb-foot { margin-top: auto; display: flex; flex-direction: column; gap: 10px; padding: 12px 4px 0; border-top: 1px solid var(--line); }
 .sb-foot .theme-switch { align-self: flex-start; }
+.sb-user { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.sb-user[hidden] { display: none; }
+.sb-ini { width: 22px; height: 22px; border-radius: 999px; display: inline-grid; place-items: center; flex: none; background: var(--track); box-shadow: 0 0 0 1px var(--line); color: var(--ink-2); font-size: 8px; font-weight: 600; }
+.sb-mail { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; color: var(--ink-2); }
+.sb-user .sb-out { width: 28px; height: 28px; }
+.sb-user .sb-out svg { width: 16px; height: 16px; }
 .sb-soon { display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 4px; font-size: 13.5px; font-weight: 500; color: var(--ink-2); }
 .sb-soon i { margin-left: auto; font-style: normal; font-size: 11.5px; font-weight: 500; color: var(--p-azul); background: var(--p-azul-bg); border: 1px solid var(--p-azul-bd); border-radius: 999px; padding: 1px 8px; }
 .sb-show { display: none; }

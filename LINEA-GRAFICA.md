@@ -196,9 +196,13 @@ Van en un cuadrito de 6 px de radio con **borde del color del servicio**, fondo 
 - Mide 224 px, con fondo `#FBFBFC` y línea a la derecha.
 - Arriba van el logo, el nombre y el botón para ocultarla. Luego está Inicio y la sección «Herramientas», que se puede plegar.
 - **Íconos de línea grises, sin color.** El elemento activo es blanco con borde suave y sombra.
-- Abajo quedan el interruptor claro/oscuro y el espacio de «Perfil y ajustes».
+- Abajo quedan el interruptor claro/oscuro (compacto, alineado a la izquierda) y la cuenta: iniciales, correo y «Cerrar sesión». La cuenta sale de la sesión única (`sesion.js`) y no se muestra si nadie ha entrado.
+- Ocultarla se recuerda en todo el sitio (`brandgo-barra`), también en el CRM. Por debajo de 900 px es un cajón, en la web y en el CRM.
 - En el celular es un cajón que se abre desde la barra superior.
-- El CRM (`/crm`, proyecto Next.js aparte) repite esta misma barra en React (`crm/src/components/sidebar.tsx`), con «CRM de clientes» activo en Herramientas. Si cambia esta barra, hay que cambiar también esa.
+- El CRM (`/crm`, proyecto Next.js aparte) repite esta misma barra en React (`crm/src/components/sidebar.tsx`), con «CRM de clientes» activo en Herramientas. Las dos miden lo mismo al píxel (ancho, alturas, márgenes y pie). Si cambia esta barra, hay que cambiar también esa.
+
+### Nada de controles nativos del navegador
+No se usan `<select>`, casillas, calendario ni `confirm()` del navegador. En la web están en `controles.js`; en el CRM, en `crm/src/components/controls.tsx` (`Select`, `Checkbox`, `DateInput`, `FileDrop`, `confirmDialog`). Los formularios llevan `noValidate` y muestran sus propios mensajes.
 
 ### Menús, calendario y selector de mes (`controles.js`)
 En computador no se usan las ventanas nativas del navegador. Todos los `<select>`, `<input type="date">` e `<input type="month">` abren un menú propio, sin cambiar el HTML:

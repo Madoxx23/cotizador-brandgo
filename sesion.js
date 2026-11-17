@@ -57,9 +57,13 @@
     cliente() {
       const cfg = window.FINANZAS_CONFIG || {};
       if (!window.supabase || !cfg.supabaseUrl) return null;
-      client = client || window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, {
-        auth: { storage, persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
-      });
+      if (!client) {
+        client = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, {
+          auth: { storage, persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
+        });
+        // La barra lateral muestra la cuenta: se actualiza al entrar o salir desde cualquier herramienta
+        client.auth.onAuthStateChange(() => setTimeout(() => window.BGBarra && window.BGBarra.cuenta(), 0));
+      }
       return client;
     }
   };

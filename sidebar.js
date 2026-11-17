@@ -23,7 +23,7 @@
     finanzas: '<path d="M4 20h16"/><path d="M6.5 16.5V12M11 16.5V7.5M15.5 16.5v-6M20 16.5V9.5"/>',
     guiones: '<rect x="3" y="6.5" width="12.5" height="11" rx="2.2"/><path d="M15.5 10.5l5-3v9l-5-3"/>',
     crm: '<circle cx="9" cy="7.5" r="3.5"/><path d="M3 20a6 6 0 0 1 12 0M16 4.3a3.5 3.5 0 0 1 0 6.4M18 14.2a6 6 0 0 1 3 5.8"/>',
-    help: '<circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.4a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.7M12 17h.01"/>'
+    logout: '<path d="M15 4.5h3a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-3M10 16.5 14.5 12 10 7.5M14.5 12H4"/>'
   };
   const TOOLS = [
     ['cotizador.html', 'Cotizar una campaña', 'cotizar'],
@@ -66,7 +66,7 @@
       </nav>
       <div class="sb-foot">
         <div class="theme-switch"></div>
-        <span class="sb-soon" title="Perfiles y configuración llegarán pronto">${svg(I.help)}Perfil y ajustes <i>Pronto</i></span>
+        <div class="sb-user" id="sbUser" hidden></div>
       </div>`;
     document.body.prepend(aside);
     const scrim = document.createElement('div'); scrim.className = 'sb-scrim'; scrim.addEventListener('click', () => openMobile(false));
@@ -92,5 +92,52 @@
     }
     document.addEventListener('keydown', e => { if (e.key === 'Escape') openMobile(false); });
   }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', build); else build();
+  // ---- Cuenta de la sesión única (cookie sb-<proyecto>-auth-token, ver sesion.js). Igual que el pie del CRM.
+  const COOKIE = 'sb-diwpxgrouvjyadtqjhpq-auth-token';
+  function cookies() {
+    const out = {};
+    document.cookie.split(';').forEach(p => { const i = p.indexOf('='); if (i > 0) out[p.slice(0, i).trim()] = p.slice(i + 1).trim(); });
+    return out;
+  }
+  function sessionEmail() {
+    try {
+      const c = cookies();
+      let raw = c[COOKIE];
+      if (!raw) { const ch = []; for (let i = 0; c[COOKIE + '.' + i]; i++) ch.push(c[COOKIE + '.' + i]); raw = ch.join(''); }
+      if (!raw) return null;
+      raw = decodeURIComponent(raw);
+      if (raw.indexOf('base64-') === 0) {
+        const b = raw.slice(7).replace(/-/g, '+').replace(/_/g, '/');
+        const bin = atob(b + '==='.slice((b.length + 3) % 4));
+        raw = new TextDecoder().decode(Uint8Array.from(bin, ch => ch.charCodeAt(0)));
+      }
+      const s = JSON.parse(raw);
+      return (s.user && s.user.email) || null;
+    } catch (e) { return null; }
+  }
+  async function salir() {
+    try { if (window.BGSesion && window.BGSesion.cliente()) await window.BGSesion.cliente().auth.signOut(); } catch (e) { /* sigue: se borra la cookie igual */ }
+    const secure = location.protocol === 'https:' ? '; Secure' : '';
+    Object.keys(cookies()).filter(n => n === COOKIE || n.indexOf(COOKIE + '.') === 0)
+      .forEach(n => { document.cookie = n + '=; Path=/; Max-Age=0; SameSite=Lax' + secure; });
+    location.reload();
+  }
+  function renderUser() {
+    const box = document.getElementById('sbUser');
+    if (!box) return;
+    const email = sessionEmail();
+    box.hidden = !email;
+    if (!email) { box.innerHTML = ''; return; }
+    const ini = (email[0] || '?').toUpperCase();   // igual que Initials del CRM
+    box.innerHTML = '<span class="sb-ini" aria-hidden="true"></span><span class="sb-mail"></span>' +
+      '<button type="button" class="sb-btn sb-out" aria-label="Cerrar sesión" title="Cerrar sesión">' + svg(I.logout) + '</button>';
+    box.querySelector('.sb-ini').textContent = ini;
+    box.querySelector('.sb-mail').textContent = email;
+    box.querySelector('.sb-out').addEventListener('click', salir);
+  }
+  window.BGBarra = { cuenta: renderUser };   // las herramientas la llaman al entrar o salir
+
+  function start() { build(); renderUser(); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
+  window.addEventListener('focus', renderUser);
 })();
