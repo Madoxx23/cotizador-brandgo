@@ -54,6 +54,12 @@ Organizados por **cuenta** (cliente). Dentro de cada cuenta están sus guiones y
 - **Etiquetar con Claude** (`api/guion.js`, modelo Sonnet 5.5): se pega el guion libre y Claude le pone las etiquetas; luego se revisa en «Así se lee». Pide iniciar sesión: pueden usarlo los miembros de Finanzas y los correos de la tabla `guion_editores` (que no dan acceso a Finanzas). Cada uso queda en `guion_ia_uso` con sus tokens.
 - Requiere correr `supabase/guiones.sql` y `supabase/guiones-ia.sql`, y la variable `ANTHROPIC_API_KEY` en Vercel.
 
+## 5. CRM de clientes (`/crm`)
+Personas, empresas y negocios con atributos propios, listas, vistas en tabla o kanban, historial e importación desde CSV.
+- Es un proyecto aparte (Next.js + Supabase) en el repositorio privado `brandgo-crm`, publicado en Vercel como `brandgo-crm.vercel.app`.
+- Esta web lo muestra en su propio dominio: `vercel.json` reescribe `/crm` y `/crm/*` hacia ese proyecto, así que la dirección no cambia. Por eso `/crm` no lleva `Referrer-Policy: no-referrer` (las server actions de Next necesitan el encabezado Origin).
+- Comparte la línea gráfica, la barra lateral y el tema claro/oscuro (misma clave `brandgo-tema`).
+
 ## Para el equipo técnico
 - `LINEA-GRAFICA.md`: guía de diseño de la web (tokens, medidas y componentes). Todo lo nuevo debe seguirla.
 - `controles.js`: menús, calendario y selector de mes propios (reemplazan las ventanas del navegador en computador).

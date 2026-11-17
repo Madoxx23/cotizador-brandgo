@@ -22,13 +22,15 @@
     cobro: '<rect x="3" y="6" width="18" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.4"/><path d="M6.5 9.5v5M17.5 9.5v5"/>',
     finanzas: '<path d="M4 20h16"/><path d="M6.5 16.5V12M11 16.5V7.5M15.5 16.5v-6M20 16.5V9.5"/>',
     guiones: '<rect x="3" y="6.5" width="12.5" height="11" rx="2.2"/><path d="M15.5 10.5l5-3v9l-5-3"/>',
+    crm: '<circle cx="9" cy="7.5" r="3.5"/><path d="M3 20a6 6 0 0 1 12 0M16 4.3a3.5 3.5 0 0 1 0 6.4M18 14.2a6 6 0 0 1 3 5.8"/>',
     help: '<circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.4a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.7M12 17h.01"/>'
   };
   const TOOLS = [
     ['cotizador.html', 'Cotizar una campaña', 'cotizar'],
     ['cuenta-de-cobro.html', 'Cuentas de cobro', 'cobro'],
     ['finanzas.html', 'Finanzas', 'finanzas', true],
-    ['guiones.html', 'Guiones de rodaje', 'guiones']
+    ['guiones.html', 'Guiones de rodaje', 'guiones'],
+    ['crm', 'CRM de clientes', 'crm']
   ];
 
   function current() {
